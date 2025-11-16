@@ -1,0 +1,10 @@
+[workspace]
+authors = ["Hernan Picatto <hernan.picatto@ascii.ac.at>"]
+channels = ["conda-forge"]
+name = "gen-ai"
+platforms = ["linux-64"]
+version = "0.1.0"
+
+[tasks]
+
+[dependencies]
