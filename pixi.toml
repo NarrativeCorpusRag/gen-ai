@@ -1,10 +1,36 @@
 [workspace]
 authors = ["Hernan Picatto <hernan.picatto@ascii.ac.at>"]
-channels = ["conda-forge"]
+channels = ["conda-forge", "https://prefix.dev/brads-forge"]
 name = "gen-ai"
 platforms = ["linux-64"]
 version = "0.1.0"
 
-[tasks]
+[environments]
+docs = { features = ["docs"], solve-group = "default" }
+basic-research = { features = ["research-basics", "pipeline"], solve-group = "br" }
+pipeline = { features = ["pipeline"], solve-group = "pipeline" }
+lint = { features = ["lint"], solve-group = "default" }
 
 [dependencies]
+python = ">=3.12,<3.13"
+pip = "~=25.2"
+
+[feature.pipeline.dependencies]
+
+[feature.docs.dependencies]
+nodejs = "~=24.4.1"
+bun = ">=1.2.19,<2"
+sphinx = "~=8.2.3"
+
+[feature.docs.pypi-dependencies]
+sphinx-rtd-theme = "~=3.0.2"
+autodoc-pydantic = "~=2.2.0"
+sphinx-autodoc-typehints = "~=3.2.0"
+myst-parser = "~=4.0.1"
+sphinx-markdown-builder = ">=0.6.8,<1"
+
+[feature.research-basics.dependencies]
+[feature.research-basics.pypi-dependencies]
+[feature.lint.dependencies]
+[feature.lint.pypi-dependencies]
+[tasks]
