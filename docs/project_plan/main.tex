@@ -1,0 +1,181 @@
+\documentclass[11pt, a4paper]{article}
+\usepackage[utf8]{inputenc} % comment when using lualatex
+\usepackage{fullpage}
+\usepackage{graphicx}
+\usepackage{xcolor}
+\usepackage[hidelinks]{hyperref}
+\renewcommand\UrlFont{\color{blue}\rmfamily}
+
+% Bibliography management
+%  see https://www.overleaf.com/learn/latex/Biblatex_citation_styles
+%  and https://www.overleaf.com/learn/latex/Bibliography_management_in_LaTeX
+\usepackage[backend=biber]{biblatex}
+\addbibresource{library.bib} %Imports bibliography file
+ 
+
+% Title of your study
+\title{Hybrid GraphRAG System for Narrative Corpus Synthesis}
+
+% Your name(s)
+\author{Hasudin \textsc{Hodzic} \\
+        Emily \textsc{Jacob} \\
+        Nikolaus \textsc{Peter} \\
+        Hernan \textsc{Picatto} \\
+        Khrystyna \textsc{Vasko}}
+
+% Your supervior(s)
+\newcommand{\professors}{Julia \textsc{Neidhardt}
+\\Emmanuel \textsc{Sallinger}
+\\Clemens \textsc{Heitzinger}
+\\Georg \textsc{Gottlob}
+\\Bernhard \textsc{Kr\"{u}pl-Sypien}
+}
+
+
+% Time period for the study
+%    Autumn project?, Master's thesis?, Autumn and master?, Other? What?
+\newcommand{\timePeriod}{Winter project}
+
+% Amount of resources in PM planned
+% E.g. 20 hours x week for autumn project 
+% + 40 hours x week for the master thesis (a semester is normally 14 weeks)
+\newcommand{\resourcesPlanned}{320 hours (80 per group member)}
+
+ % Web address for the project (if any)
+\newcommand{\homepage}{\url{https://www.tuwien.at}}
+
+% Date for title page, default is today
+\date{\today}
+
+\makeatletter{}
+
+\begin{document}
+
+\input{./title.tex}
+\section{Purpose}
+"Narrative" analysis implies the need to understand how a story evolves, connects, and is framed by different sources over time \cite{Keith_Norambuena_2023}.
+This is a high-stakes analytical task.
+The primary user groups are professionals who must synthesize vast amounts of fragmented information to make critical decisions.
+In other words, policymakers need to grasp the real-time changes in events like the current 'Nexperia' case.
+Academics and consultants should provide advice when strong quantitative models are lacking.
+The target goals for this project are 2:
+\begin{enumerate}
+    \item \textbf{Connection Discovery:} Addressing the challenge "I didn't realize these companies were related."
+    \item \textbf{Synthesis:} Addressing the challenge "I have a lot of notes but cannot see the big picture."
+\end{enumerate}
+These goals have been explicitly identified in recent research as the primary failure modes of tradition (Semantic similarity vector-based) RAG systems. 
+\section*{Data}
+The system will use the Common Crawl News dataset (CC-NEWS)\cite{cc_news_dataset}.
+This public data set contains many petabytes of news articles from thousands of sources worldwide.
+This option avoids major engineering and legal issues related to the creation of a custom scraper.
+It lets the project focus on the core generative AI challenges in synthesis and connection.
+
+The data is unstructured text (news articles) found in raw .warc.gz (Web ARChive) files in the commoncrawl S3 bucket.
+The only structured metadata includes the article's timestamp and source URL.
+This can be found in the headers of each WARC record's HTTP response.
+
+\subsection*{Information Organization}
+\begin{description}
+    \item[Granularity:] Scattered.
+    Specific ideas are fragmented in many short, duplicate, and often contradictory articles.
+    \item[Connections:]Implicit.
+    Some articles have hyperlinks, which could have information.
+    However, key relationships between entities, like Person, Organization, and Event, are mostly implied. Readers must infer these connections.
+    \item[Completeness:] Fragmented.
+    The dataset is a "messy real-world test case."
+    Each article offers only a partial or biased view of an evolving story.
+    The "ground truth" does not exist in one document and must be created from these fragments.
+    \item[Context:] Poor.
+    Timestamps and publisher domains are there, but key context is missing.
+    We might need to infer things like author intent, bias, and story origins.
+    \item[Heterogeneity:] Extreme.
+    The data is not clean text.
+    It includes raw WARC files with messy, full HTML, including ads and menus.
+    This creates a significant "Understanding \& Structuring" challenge.
+    The corpus has articles from many sources, with conflicting viewpoints and styles.
+\end{description}
+\section{Solution}
+The system addresses these problems by implementing a Hybrid GraphRAG pipeline.
+This approach goes beyond semantic similarity.
+It clearly models and uses the relationships found in the data.
+The system will perform the following conceptual tasks:
+\begin{itemize}
+    \item \textbf{Understand:} The system starts by parsing the raw CC-NEWS data. 
+    It takes this messy and unstructured information and turns it into a clear Knowledge Graph.\cite{min2025efficientknowledgegraphconstruction, neo4j_relik_llamaindex}
+    Automatically pulls out key entities such as companies, people, locations, and relationships.
+    To solve the "big picture" problem, we will implement the hierarchical indexing strategy described in \cite{edge2025localglobalgraphrag}.
+    Once the graph is built, the system will use graph-based community detection to divide it into thematic clusters.\cite{msft_graphrag_unlocking, neo4j_what_is_graphrag, neo4j_advanced_rag}
+    \item \textbf{Connect:} This is the real-time, user-facing phase.
+    \begin{enumerate}
+        \item Perform a vector search to find the most semantically relevant "entry point" nodes in the graph.
+        \item Perform a graph traversal from those nodes to discover structurally-related information (e.g., companies, people) that is not semantically similar to the original query.
+    \end{enumerate}
+    \item \textbf{Generation:} The system will merge the results of the vector and graph retrievers using a method such as Reciprocal Rank Fusion (RRF)\cite{lumer2025graphragtoolfusion, edge2025localglobalgraphrag}.
+\end{itemize}
+
+\subsection*{Interface}
+Our target users use would be a Web Application.
+This choice is due to its great support for interactive data visualization and would be key for Connection Discovery.
+Due to the tight time limits for this short academic project, a full web front-end is not practical.
+For the evaluation phase, we will try to offer a temporary Open-WebUI endpoint\cite{baek2025openwebuiopenextensible}.
+This will ideally let course staff easily interact with core functions through a simple interface.
+
+The main runnable deliverable will be a Python console script.
+This script covers documentation and configuration.
+It should include weights and model pointers.
+These would allow for local deployment and running of the Hybrid GraphRAG pipeline.
+They also support the LLM-as-a-Judge evaluation scripts.
+This approach allows the project team to focus more than 90\% of their effort on key challenges—KG Construction, Hybrid Retrieval, and Synthesis.
+They spend less time on complex web infrastructure and long-duration deployment management.
+
+\subsection*{Technical approach}
+\subsubsection*{KG Construction Trade-offs}
+For domain-specific text (e.g., financial news), what is the comparative performance, cost, and factual accuracy of a Knowledge Graph constructed via a general-purpose LLM (e.g., GPT-4, Llama-3 ) versus a fine-tuned, lightweight, specialized NLP model (e.g., Relik ) \cite{neo4j_relik_llamaindex}
+
+This addresses the "high computational cost" and the risk of "hallucination," which are key obstacles in building LLM-based KGs.
+Research suggests that large models are better inference assistants than extractors , while small models are "blazing fast" but more rigid. \cite{min2025efficientknowledgegraphconstruction}
+\subsubsection*{Hybrid Retrieval Fusion}
+What is the optimal strategy for fusing results from semantic vector search and structured graph traversal to maximize relevance for multi-hop queries?
+
+A naive concatenation of results will be noisy.
+This project probably should investigate advanced fusion techniques.
+This includes implementing Reciprocal Rank Fusion (RRF)\cite{neo4j_advanced_rag, lumer2025graphragtoolfusion} to merge the ranked lists (only one I know) and exploring query-time routing to dynamically decide whether to prioritize the vector or graph results based on the query's inferred intent 
+\subsubsection*{Hierarchical Indexing for Synthesis}
+How can graph-based community detection help build a hierarchical index?
+
+This index would allow a RAG system to answer broad synthesis questions about a whole corpus. 
+This is the core technical mechanism required to solve the "Synthesis" problem. The baseline RAG does not have the concept of a "holistic structure". 
+This requires to:
+\begin{enumerate}
+    \item Implement a graph clustering algorithm like Leiden or Louvain on the entity graph.  
+    \item Use an LLM to summarize the nodes in each cluster.  
+    \item Store these summaries as new "community" nodes in a hierarchical index, similar to Microsoft GraphRAG.
+\end{enumerate}
+\section{Evaluation}
+\subsection*{Definition of Success and Baseline}
+Success is defined as a statistically significant and measurable improvement in answering complex, analytical queries, compared to a rigorously defined Baseline System.
+Our objective is to empirically demonstrate that the structural information provided by the Knowledge Graph (KG) solves the failure modes of traditional RAG on our chosen corpus.
+
+While the creation of a small, human-curated benchmark of 20-30 questions (hand-crafted from the CC-NEWS data focusing on the 'Nexperia' example) is a desirable goal, we will reserve it as a nice-to-have stretch goal.
+Our primary and rigorous evaluation will be based on the following external resources:
+\begin{enumerate}
+\item \textbf{NewsQA} \cite{trischler2017newsqamachinecomprehensiondataset}: This corpus contains over 100,000 human-generated question-answer pairs derived from over 12,000 CNN news articles.
+It is explicitly designed to ask questions that require reasoning-like behaviors and the synthesis of information in different parts of an article \cite{trischler2017newsqamachinecomprehensiondataset}.
+Its focus on news content and multi-sentence synthesis makes it an ideal, off-the-shelf benchmark for evaluating our Type 2 (Connection) and Type 3 (Synthesis) queries.
+\item \textbf{NewsQuizQA } \cite{lelkes2021quizstylequestiongenerationnews}: contains 20,000 human written question-answer pairs from 5,000 news article summaries. 
+Even when the original goal is measuring human news informedness at a scale, this dataset can be used for measuring rag performance
+\end{enumerate}
+\textbf{Baseline System:} A standard vector-only RAG pipeline (using the same language model, fragmentation strategy, and vector store) built on the exact same set of documents.
+\textbf{Evaluation Hypothesis:} We expect the baseline RAG to perform comparably or better on simple retrieval (Type 1) queries due to its speed. The superiority of the hybrid GraphRAG system will be demonstrated exclusively on the two complex task types it is designed to solve: \textbf{Connection Discovery} and \textbf{Synthesis}.
+\subsection*{Metrics and Measurement}
+The evaluation will be quantitative. Our exploration of the literature suggests that recent systematic evaluations of GraphRAG \cite{han2025ragvsgraphragsystematic, ahmad2025benchmarkingvectorgraphhybrid}.
+\begin{itemize}
+    \item \textbf{Factual Correctness:} Measures whether the answer is factually accurate against the known truth in the corpus. Hybrid GraphRAG is expected to excel here due to the structured foundation \cite{ahmad2025benchmarkingvectorgraphhybrid, han2025ragvsgraphragsystematic}.
+    \item \textbf{Context Relevance:} Measures the signal-to-noise ratio of the retrieved context. High scores for GraphRAG demonstrate its ability to traverse the graph and retrieve only highly relevant, relationship-rich facts \cite{han2025ragvsgraphragsystematic}.
+    \item \textbf{Faithfulness:} Measures whether the generated answer is grounded entirely in the retrieved context ($F = \frac{|V|}{|S|}$, where $V$ is verifiable statements and $S$ is total statements). Graph-based retrieval should maintain high faithfulness due to its structured sourcing \cite{ahmad2025benchmarkingvectorgraphhybrid}.
+    \item \textbf{Answer Relevance:} Measures how well the generated answer addresses the user's original question, independent of factual correctness. This is critical for Type 3 (Synthesis) queries, where the baseline RAG fails to capture the overall intent of the user \cite{ahmad2025benchmarkingvectorgraphhybrid, edge2025localglobalgraphrag}.
+\end{itemize}
+
+% References
+\printbibliography
+\end{document}
