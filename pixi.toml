@@ -43,6 +43,7 @@ Resiliparse = "~=0.15"
 tldextract = "~=5.3"
 idna = "~=3.11"
 surt = "~=0.3"
+coreferee 1.4.1
 
 [feature.lint.dependencies]
 [feature.lint.pypi-dependencies]
