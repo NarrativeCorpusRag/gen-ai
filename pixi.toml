@@ -12,18 +12,21 @@ pipeline = { features = ["pipeline"], solve-group = "pipeline" }
 lint = { features = ["lint"], solve-group = "default" }
 
 [dependencies]
-python = ">=3.12,<3.13"
+python = ">=3.11,<3.15"
 pip = "~=25.2"
 
 [feature.pipeline.dependencies]
-[feature.pipeline.pypi-dependencies]
+pydantic = "~=2.12"
 dagster = "~=1.12"
-boto3 = "~=1.40"
+
+[feature.pipeline.pypi-dependencies]
+boto3 = "~=1.40
 botocore = "~=1.40"
+
 [feature.docs.dependencies]
-nodejs = "~=24.4.1"
-bun = ">=1.2.19,<2"
-sphinx = "~=8.2.3"
+nodejs = "~=24.4"
+bun = ">=1.2,<2"
+sphinx = "~=8.2"
 
 [feature.docs.pypi-dependencies]
 sphinx-rtd-theme = "~=3.0.2"
@@ -43,7 +46,7 @@ Resiliparse = "~=0.15"
 tldextract = "~=5.3"
 idna = "~=3.11"
 surt = "~=0.3"
-coreferee 1.4.1
+spacy = "~=3.8"  # Upgrade to support pydantic 2.x
 
 [feature.lint.dependencies]
 [feature.lint.pypi-dependencies]
