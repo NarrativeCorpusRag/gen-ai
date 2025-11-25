@@ -1,0 +1,1 @@
+# Group 62: Personalized AI Trainer for Learning German
