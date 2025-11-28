@@ -18,10 +18,15 @@ pip = "~=25.2"
 [feature.pipeline.dependencies]
 pydantic = "~=2.12"
 dagster = "~=1.12"
+pyspark= "~=3.5"
 
 [feature.pipeline.pypi-dependencies]
 boto3 = "~=1.40"
 botocore = "~=1.40"
+google-auth = "~=2.43"
+gcsfs = "~=2025.10"
+pyarrow = "~=22.0"
+dagster-gcp = "~=0.28"
 
 [feature.docs.dependencies]
 nodejs = "~=24.4"
@@ -37,6 +42,7 @@ sphinx-markdown-builder = ">=0.6.8,<1"
 
 [feature.research-basics.dependencies]
 ipykernel = "~=6.14"
+
 [feature.research-basics.pypi-dependencies]
 arxiv = "~=2.3"
 pypdf = "~=6.3"
