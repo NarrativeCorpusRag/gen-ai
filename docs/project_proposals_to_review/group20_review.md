@@ -1,8 +1,8 @@
 # Group 20: CookCompass
 ## Summary
-Describe the problem the app is trying to solve in max. 
-3 sentences. 
-What problem does the app solve, how (solution), and for whom (user)?
+The core objective match users inventory and dietary constraints with the unstructured content of the open web.
+CookCompass solves the problem of inefficient and unsafe recipe discovery for individuals with dietary restrictions by utilizing a Retrieval-Augmented Generation (RAG) architecture to filter, verify, and synthesize recipes from the Food.
+Targets users with hard constraints providing a conversational interface that transforms rigid database.
 
 ## Clarity & Coherence
 Rate the clarity of each section and identify gaps:
