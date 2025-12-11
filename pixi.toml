@@ -28,6 +28,12 @@ google-auth = "~=2.43"
 gcsfs = "~=2025.10"
 pyarrow = "~=22.0"
 dagster-gcp = "~=0.28"
+dagster-polars = "~=0.27"
+beautifulsoup4 = "~=4.14"
+lxml = "~=6.0"
+html5lib = "~=1.1"
+dagster-webserver = "~=1.12"
+google-cloud-storage = "~=3.6"
 
 [feature.docs.dependencies]
 nodejs = "~=24.4"
@@ -73,3 +79,9 @@ env = {GEN_AI_AGE_PUBLIC_KEY = "age19nj2kfsw8l56uyf2u8hacasy9yj3wyguk9r67jp846tw
 [feature.secrets-tools.tasks.secrets-decrypt]
 cmd = """bash -c 'set -euo pipefail; PATH="$PWD/bin:$PATH"; : "${SOPS_AGE_KEY_FILE:=key.txt}"; umask 077; for file in ${FILES_TO_ENCRYPT//,/ } ; do echo "Decrypting: $file"; sops --decrypt --input-type binary --output-type binary "$file-dev.enc" > "$file"; done'"""
 env = {SOPS_AGE_KEY_FILE = "key.txt", FILES_TO_ENCRYPT = ".env" }
+
+[feature.pipeline.tasks.pipeline-dev]
+description = "Start dagster UI for local pipelines project"
+cwd = "src/gen_ai_pipeline"
+env = { DAGSTER_HOME = "~/development/software/dagster/home" }
+cmd = """sh -c 'mkdir -p ${HOME}/development/software/dagster/home' && dagster dev"""
