@@ -17,9 +17,22 @@ from botocore import UNSIGNED
 from botocore.config import Config
 from typing import Dict
 from dagster_polars import PolarsParquetIOManager
-from .gcloud_helpers import create_folder, get_gcs_options
+from ..helpers.gcloud_helpers import create_folder, get_gcs_options
 warc_partitions_def = DynamicPartitionsDefinition(name="warc_files")
 
+import os
+import tempfile
+from google.cloud import storage
+
+def upload_file_to_gcs(local_path: str, gcs_uri: str) -> None:
+    assert gcs_uri.startswith("gs://")
+    _, _, rest = gcs_uri.partition("gs://")
+    bucket, _, key = rest.partition("/")
+    client = storage.Client()
+    client.bucket(bucket).blob(key).upload_from_filename(local_path)
+
+
+    
 @asset(
     key_prefix=["news"],
     name="index",
@@ -89,8 +102,9 @@ def cc_news_index(context: AssetExecutionContext) -> MaterializeResult:
                     "private_key_id": os.getenv('GCP_PRIVATE_KEY_ID'),
                     "private_key": os.getenv('GCP_PRIVATE_KEY'),
                     "client_email": os.getenv('GCP_EMAIL')},
-                use_pyarrow=True,
+                use_pyarrow=False
             )
+    
     return MaterializeResult(
         metadata={
             "row_count": len(final_df),

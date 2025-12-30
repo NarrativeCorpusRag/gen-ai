@@ -1,6 +1,6 @@
 from dagster import Definitions, load_assets_from_modules
 import os 
-from gen_ai_pipeline.index_asset import cc_news_index  # noqa: TID252
+from gen_ai_pipeline.assets.index_asset import cc_news_index  # noqa: TID252
 from dagster_polars import PolarsParquetIOManager
 import dotenv
 
