@@ -34,6 +34,13 @@ lxml = "~=6.0"
 html5lib = "~=1.1"
 dagster-webserver = "~=1.12"
 google-cloud-storage = "~=3.6"
+google-cloud-dataproc = "~=5.23"
+dagster-pipes = "~=1.12"
+polars = "~=1.35"
+FastWARC="~=0.15"
+Resiliparse = "~=0.15"
+tldextract = "~=5.3"
+idna = "~=3.11"
 
 [feature.docs.dependencies]
 nodejs = "~=24.4"
@@ -53,13 +60,8 @@ ipykernel = "~=6.14"
 [feature.research-basics.pypi-dependencies]
 arxiv = "~=2.3"
 pypdf = "~=6.3"
-polars = "~=1.35"
-FastWARC="~=0.15"
-Resiliparse = "~=0.15"
-tldextract = "~=5.3"
-idna = "~=3.11"
-surt = "~=0.3"
 spacy = "~=3.8"  # Upgrade to support pydantic 2.x
+surt = "~=0.3"
 
 [feature.secrets-tools.dependencies]
 go-sops = "~=3.10"
@@ -85,3 +87,10 @@ description = "Start dagster UI for local pipelines project"
 cwd = "src/gen_ai_pipeline"
 env = { DAGSTER_HOME = "~/development/software/dagster/home" }
 cmd = """sh -c 'mkdir -p ${HOME}/development/software/dagster/home' && dagster dev"""
+
+[feature.pipeline.tasks.create_sh]
+description = "Create executable for Dataproc"
+cwd = "src/gen_ai_pipeline/gen_ai_pipeline/resources/"
+cmd = """
+pixi-pack --create-executable --environment pipeline --platform linux-64 {{ pixi.manifest_path }} 
+"""
