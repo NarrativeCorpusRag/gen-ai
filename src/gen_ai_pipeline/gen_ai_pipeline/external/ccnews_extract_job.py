@@ -1,12 +1,9 @@
-import argparse
-from calendar import month
-import gzip
-import os
 import re
 from urllib.parse import urlparse
-
+import gzip
 import boto3
 import idna
+from pyspark.sql.functions import col
 import tldextract
 from fastwarc.warc import ArchiveIterator, WarcRecordType, is_http
 from fastwarc.stream_io import GZipStream
@@ -70,65 +67,85 @@ def get_surt_host(url):  # noqa: C901
 
 
 def process_warc_partition(iterator, aws_access_key, aws_secret_key):
+    """
+        This runs on the worker nodes. 
+        It receives an iterator of rows (each row contains a 'warc_path').
+        It initializes its own boto3 client and processes files.
+    """
+
     s3_client = boto3.client(
         "s3",
         aws_access_key_id=aws_access_key,
         aws_secret_access_key=aws_secret_key,
     )
-
     for row in iterator:
         key = row.warc_path
 
-        # Parse CC-NEWS key structure: crawl-data/CC-NEWS/YYYY/MM/filename.warc.gz
         try:
-            path_parts = key.split("/")
+            path_parts = key.split('/')
             filename = path_parts[-1]
-            year_str = path_parts[-3]
+            year_str = path_parts[-3] 
             month_str = path_parts[-2]
-            timestamp = filename.split("-")[2]
+            timestamp = filename.split('-')[2]
             day_str = timestamp[6:8]
         except Exception:
+            print(f"Skipping malformed path: {key}")
             continue
 
         try:
-            response = s3_client.get_object(Bucket="commoncrawl", Key=key)
-            stream = GZipStream(response["Body"])
-
+            # Stream directly from S3
+            response = s3_client.get_object(Bucket='commoncrawl', Key=key)
+            # Fastwarc handles the stream
+            stream = GZipStream(response['Body'])
+            
             for record in ArchiveIterator(stream, record_types=WarcRecordType.response, func_filter=is_http):
                 try:
-                    uri = record.headers.get("WARC-Target-URI")
+                    uri = record.headers.get('WARC-Target-URI')
                     body_bytes = record.reader.read()
-
+                    
+                    # Encoding and Text Extraction
                     encoding = detect_encoding(body_bytes)
                     html = bytes_to_str(body_bytes, encoding)
                     text = extract_plain_text(html)
-
+                    
+                    # Metadata
+                    http_date = record.http_date
+                    http_last_modified = record.http_last_modified
+                    http_charset = record.http_charset
+                    surt_uri = surt(uri)
+                    host = get_surt_host(uri)
+                    
+                    # Language Detection
                     r = detect_fast(text, n_results=3)
-                    main_lang = r[0][0] if r else "unknown"
-                    langs = [x[0] for x in r] if r else []
-                    confs = [float(x[1]) for x in r] if r else []
+                    main_lang = r[0][0] if r else 'unknown'
+                    langs = [x[0] for x in r]
+                    confs = [float(x[1]) for x in r]
 
+                    # Yield a dictionary representing the row
                     yield {
-                        "uri": uri,
-                        "text": text,
-                        "html": html,
-                        "main_lang": main_lang,
-                        "langs": langs,
-                        "confs": confs,
-                        "http_date": record.http_date,
-                        "http_last_modified": record.http_last_modified,
-                        "http_charset": record.http_charset,
-                        "surt_uri": surt(uri),
-                        "host": get_surt_host(uri),
-                        "path": filename,
-                        "year": year_str,
-                        "month": month_str,
-                        "day": day_str,
+                        'uri': uri,
+                        'text': text, # Storing full text
+                        'html': html, # Optional: Storing full HTML
+                        'main_lang': main_lang,
+                        'langs': langs,
+                        'confs': confs,
+                        'http_date': http_date,
+                        'http_last_modified': http_last_modified,
+                        'http_charset': http_charset,
+                        'surt_uri': surt_uri,
+                        'host': host,
+                        # Partition columns
+                        'path': filename,
+                        'year': year_str,
+                        'month': month_str,
+                        'day': day_str
                     }
-                except Exception:
+                except Exception as e:
+                    # Log internal record errors but don't stop the stream
                     continue
-        except Exception:
-            continue
+                    
+        except Exception as e:
+            print(f"Error processing WARC file {key}: {e}")
 
 
 from dagster_pipes import (
@@ -165,19 +182,23 @@ def main():
 
             spark = SparkSession.builder.appName("CC-NEWS").getOrCreate()
 
-            # Read index and filter to month
-            # Expect index has columns: warc_path, year, month OR can derive from path.
-            idx = spark.read.format("parquet").load(index_uri)
+            s3_client = boto3.client('s3', 
+                                    aws_access_key_id=aws_access_key,
+                                    aws_secret_access_key=aws_secret_key)
+            
+            paths_gz_key = f'crawl-data/CC-NEWS/{year}/{month}/warc.paths.gz'
+            response = s3_client.get_object(Bucket='commoncrawl', Key=paths_gz_key)
+            decompressed_bytes = gzip.decompress(response['Body'].read())
+            
+            # Read paths into a list
+            warc_paths = [line.decode('utf-8').strip() for line in decompressed_bytes.splitlines()]
+            
+            # B. Create a simple DataFrame of paths to distribute work
+            # Repartition determines parallelism. e.g., if you have 1000 files and 100 partitions, 
+            # each task processes ~10 files.
+            paths_df = spark.createDataFrame([(p,) for p in warc_paths], ["warc_path"]).repartition(100)
 
-            # If your index is only 2025 partitions, either:
-            # - store year/month columns; or
-            # - filter by string contains
-            # Here: robust contains filter.
-            month_prefix = f"/CC-NEWS/{year}/{month}/"
-            idx_month = idx.where(idx.warc_path.contains(month_prefix)).select("warc_path")
-
-            paths_df = idx_month.repartition(repartition)
-
+            # C. Define Output Schema
             schema = StructType([
                 StructField("uri", StringType(), True),
                 StructField("text", StringType(), True),
@@ -190,22 +211,29 @@ def main():
                 StructField("http_charset", StringType(), True),
                 StructField("surt_uri", StringType(), True),
                 StructField("host", StringType(), True),
+                # Partition cols
                 StructField("path", StringType(), True),
                 StructField("year", StringType(), True),
                 StructField("month", StringType(), True),
                 StructField("day", StringType(), True),
             ])
 
-            rdd = paths_df.rdd.mapPartitions(lambda it: process_warc_partition(it, aws_access_key, aws_secret_key))
-            final_df = spark.createDataFrame(rdd, schema=schema)
-
-            pipes.log.info("Writing parquet to GCS")
-            (
-                final_df.write
-                .mode("overwrite")
-                .partitionBy("year", "month", "day", "path", "main_lang")
-                .parquet(out_root)
+            # D. Execute Processing (Map Partitions)
+            # mapPartitions is more efficient than map because we init the S3 client once per partition
+            processed_rdd = paths_df.rdd.mapPartitions(
+                lambda iterator: process_warc_partition(iterator, aws_access_key, aws_secret_key)
             )
+            
+            # Convert back to DataFrame
+            final_df = spark.createDataFrame(processed_rdd, schema=schema)
+            final_df.show()
+            # E. Write to GCS
+            pipes.log.info(f"Writing to {out_root}...")
+            final_df.write \
+                .mode("append") \
+                .partitionBy("year", "month", "day", "path", "main_lang") \
+                .parquet(out_root)
+            pipes.log.info("Job Complete.")
             pipes.report_asset_materialization(
                 metadata={
                     "year": year,

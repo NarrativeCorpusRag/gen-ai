@@ -57,8 +57,8 @@ def ccnews_html_text_month(
     props = {
         # required for Pipes messages to work
         # "dataproc:pip.packages": "dagster-pipes,google-cloud-storage",
-        "spark.pyspark.python": "python3",
-        "spark.pyspark.driver.python": "python3",
+        "spark.pyspark.python": "/opt/gen-ai-env/env/bin/python",
+        "spark.pyspark.driver.python": "/opt/gen-ai-env/env/bin/python",
         # make AWS creds available to driver + executors
         "spark.yarn.appMasterEnv.ASCII_AWS_ACCESS_KEY_ID": aws_key,
         "spark.yarn.appMasterEnv.ASCII_AWS_SECRET_ACCESS_KEY": aws_secret,
