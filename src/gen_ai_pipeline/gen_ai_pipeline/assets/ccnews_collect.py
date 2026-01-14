@@ -1,12 +1,16 @@
 from dagster import (
-    asset, AssetExecutionContext, MonthlyPartitionsDefinition, get_dagster_logger
+    asset, AssetExecutionContext, MonthlyPartitionsDefinition, get_dagster_logger, Config
 )
-from dagster_gcp.pipes import PipesDataprocJobClient
 from google.cloud.dataproc_v1 import Job, JobPlacement, PySparkJob, SubmitJobRequest
 from google.cloud import dataproc_v1 as dataproc
 import re
 import os
-from dagster_gcp.pipes import PipesDataprocJobClient
+from dagster_gcp.pipes import (
+    PipesDataprocJobClient,
+    PipesGCSContextInjector,
+    PipesGCSMessageReader,
+)
+from typing import Optional
 
 monthly_partitions = MonthlyPartitionsDefinition(start_date="2025-01-01")
 
@@ -22,18 +26,23 @@ def _make_cluster_name(partition_key: str) -> str:
     # Dataproc allows up to 51 chars
     return base[:51].rstrip("-")
 
+class DataCollectionConfig(Config):
+    year: int = 2025
+    month: int = 10
+    index_uri: str = "gs://gen-ai-tu/index/"
+    repartition: str = "gs://gen-ai-tu/news/raw"
+    out_root: int = 100
+    
 @asset(partitions_def=monthly_partitions)
 def ccnews_html_text_month(
     context: AssetExecutionContext,
+    config: DataCollectionConfig,
     dataproc_job_client: PipesDataprocJobClient,
 ):
     pk = context.partition_key
-    year = pk[0:4]
-    month = pk[5:7]
-
-
-    index_uri = "gs://gen-ai-tu/index/"
-    out_root = "gs://gen-ai-tu/news/raw"
+    # Extract year and month from partition key
+    year = int(pk[0:4])
+    month = int(pk[5:7])
 
     main_py = "gs://gen-ai-tu/artifacts/ccnews_extract_job.py"
     pyfiles: list[str] = []
@@ -48,9 +57,8 @@ def ccnews_html_text_month(
     props = {
         # required for Pipes messages to work
         # "dataproc:pip.packages": "dagster-pipes,google-cloud-storage",
-        # required for env
-        "spark.pyspark.python": "/opt/gen-ai-env/env/bin/python",
-        "spark.pyspark.driver.python": "/opt/gen-ai-env/env/bin/python",
+        "spark.pyspark.python": "python3",
+        "spark.pyspark.driver.python": "python3",
         # make AWS creds available to driver + executors
         "spark.yarn.appMasterEnv.ASCII_AWS_ACCESS_KEY_ID": aws_key,
         "spark.yarn.appMasterEnv.ASCII_AWS_SECRET_ACCESS_KEY": aws_secret,
@@ -109,22 +117,25 @@ def ccnews_html_text_month(
                         placement=JobPlacement(cluster_name=cluster_name),
                         pyspark_job=PySparkJob(
                             main_python_file_uri=main_py,
-                            args=[
-                                "--year", year,
-                                "--month", month,
-                                "--index-uri", index_uri,
-                                "--out-root", out_root,
-                                "--repartition", "100",
-                            ],
                             properties=props,
                         ),
                     ),
                 )
             },
+            extras={
+                "year": str(year),
+                "month": str(month).zfill(2),
+                "index_uri": config.index_uri,
+                "repartition": config.repartition,
+                "out_root": config.out_root,
+                "ASCII_AWS_ACCESS_KEY_ID": aws_key,
+                "ASCII_AWS_SECRET_ACCESS_KEY": aws_secret,
+            }
         )
-        return job_run.get_results()
+        return job_run.get_materialize_result()
     except Exception as e:
         get_dagster_logger().error(f"Error during Dataproc job: {e}")
+        raise  # Re-raise the exception to ensure it's properly handled by Dagster
     finally:
         if created:
             context.log.info(f"Deleting cluster: {cluster_name}")

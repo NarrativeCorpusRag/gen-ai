@@ -1,4 +1,5 @@
 import argparse
+from calendar import month
 import gzip
 import os
 import re
@@ -18,7 +19,7 @@ from pyspark.sql import SparkSession
 from pyspark.sql.types import (
     StructType, StructField, StringType, ArrayType, FloatType
 )
-from dagster_pipes import open_dagster_pipes
+from dagster_pipes import open_dagster_pipes, PipesContext
 
 
 ip_pattern = re.compile(r"^(?:www\.)?\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\Z")
@@ -148,37 +149,34 @@ def main():
     ) as pipes:
         # parameters still come from argparse (your current approach), OR from pipes.get_params()
         pipes.log.info("Starting CC-NEWS extract job")
-        
-        parser = argparse.ArgumentParser()
-        parser.add_argument("--year", required=True)
-        parser.add_argument("--month", required=True)
-        parser.add_argument("--index-uri", required=True)   # parquet with warc_path col
-        parser.add_argument("--out-root", required=True)    # gs://... output
-        parser.add_argument("--repartition", type=int, default=100)
-        args = parser.parse_args()
-
-        aws_access_key = os.environ.get("ASCII_AWS_ACCESS_KEY_ID")
-        aws_secret_key = os.environ.get("ASCII_AWS_SECRET_ACCESS_KEY")
+        context = PipesContext.get()
+        year = context.get_extra("year")
+        month = context.get_extra("month")
+        index_uri = context.get_extra("index_uri")
+        repartition = context.get_extra("repartition")
+        out_root = context.get_extra("out_root")
+        aws_access_key = context.get_extra("ASCII_AWS_ACCESS_KEY_ID")
+        aws_secret_key = context.get_extra("ASCII_AWS_SECRET_ACCESS_KEY")
         if not aws_access_key or not aws_secret_key:
             raise RuntimeError("Missing ASCII_AWS_ACCESS_KEY_ID / ASCII_AWS_SECRET_ACCESS_KEY env vars")
 
         with open_dagster_pipes() as pipes:
-            pipes.log.info(f"Starting CC-NEWS extract for {args.year}-{args.month}")
+            pipes.log.info(f"Starting CC-NEWS extract for {year}-{month}")
 
             spark = SparkSession.builder.appName("CC-NEWS").getOrCreate()
 
             # Read index and filter to month
             # Expect index has columns: warc_path, year, month OR can derive from path.
-            idx = spark.read.format("parquet").load(args.index_uri)
+            idx = spark.read.format("parquet").load(index_uri)
 
             # If your index is only 2025 partitions, either:
             # - store year/month columns; or
             # - filter by string contains
             # Here: robust contains filter.
-            month_prefix = f"/CC-NEWS/{args.year}/{args.month}/"
+            month_prefix = f"/CC-NEWS/{year}/{month}/"
             idx_month = idx.where(idx.warc_path.contains(month_prefix)).select("warc_path")
 
-            paths_df = idx_month.repartition(args.repartition)
+            paths_df = idx_month.repartition(repartition)
 
             schema = StructType([
                 StructField("uri", StringType(), True),
@@ -204,15 +202,15 @@ def main():
             pipes.log.info("Writing parquet to GCS")
             (
                 final_df.write
-                .mode("append")
+                .mode("overwrite")
                 .partitionBy("year", "month", "day", "path", "main_lang")
-                .parquet(args.out_root)
+                .parquet(out_root)
             )
             pipes.report_asset_materialization(
                 metadata={
-                    "year": args.year,
-                    "month": args.month,
-                    "out_root": args.out_root,
+                    "year": year,
+                    "month": month,
+                    "out_root": out_root,
                 }
             )
             pipes.log.info("Done.")
