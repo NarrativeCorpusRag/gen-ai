@@ -30,8 +30,8 @@ class DataCollectionConfig(Config):
     year: int = 2025
     month: int = 10
     index_uri: str = "gs://gen-ai-tu/index/"
-    repartition: str = "gs://gen-ai-tu/news/raw"
-    out_root: int = 100
+    repartition: int = 100
+    out_root: str = "gs://gen-ai-tu/news/raw"
     
 @asset(partitions_def=monthly_partitions)
 def ccnews_html_text_month(

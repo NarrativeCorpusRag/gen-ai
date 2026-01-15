@@ -72,12 +72,12 @@ def process_warc_partition(iterator, aws_access_key, aws_secret_key):
         It receives an iterator of rows (each row contains a 'warc_path').
         It initializes its own boto3 client and processes files.
     """
-
     s3_client = boto3.client(
         "s3",
         aws_access_key_id=aws_access_key,
         aws_secret_access_key=aws_secret_key,
     )
+    
     for row in iterator:
         key = row.warc_path
 
@@ -89,13 +89,11 @@ def process_warc_partition(iterator, aws_access_key, aws_secret_key):
             timestamp = filename.split('-')[2]
             day_str = timestamp[6:8]
         except Exception:
-            print(f"Skipping malformed path: {key}")
+            # print(f"Skipping malformed path: {key}")
             continue
 
         try:
-            # Stream directly from S3
             response = s3_client.get_object(Bucket='commoncrawl', Key=key)
-            # Fastwarc handles the stream
             stream = GZipStream(response['Body'])
             
             for record in ArchiveIterator(stream, record_types=WarcRecordType.response, func_filter=is_http):
@@ -103,29 +101,31 @@ def process_warc_partition(iterator, aws_access_key, aws_secret_key):
                     uri = record.headers.get('WARC-Target-URI')
                     body_bytes = record.reader.read()
                     
-                    # Encoding and Text Extraction
                     encoding = detect_encoding(body_bytes)
                     html = bytes_to_str(body_bytes, encoding)
                     text = extract_plain_text(html)
                     
-                    # Metadata
-                    http_date = record.http_date
-                    http_last_modified = record.http_last_modified
+                    # fastwarc returns datetime objects that may contain timezone info
+                    # which Spark's default pickler often struggles with.
+                    http_date_obj = record.http_date
+                    http_date = str(http_date_obj) if http_date_obj else None
+
+                    http_last_mod_obj = record.http_last_modified
+                    http_last_modified = str(http_last_mod_obj) if http_last_mod_obj else None
+
                     http_charset = record.http_charset
                     surt_uri = surt(uri)
                     host = get_surt_host(uri)
                     
-                    # Language Detection
                     r = detect_fast(text, n_results=3)
                     main_lang = r[0][0] if r else 'unknown'
                     langs = [x[0] for x in r]
                     confs = [float(x[1]) for x in r]
 
-                    # Yield a dictionary representing the row
                     yield {
                         'uri': uri,
-                        'text': text, # Storing full text
-                        'html': html, # Optional: Storing full HTML
+                        'text': text,
+                        'html': html,
                         'main_lang': main_lang,
                         'langs': langs,
                         'confs': confs,
@@ -134,14 +134,12 @@ def process_warc_partition(iterator, aws_access_key, aws_secret_key):
                         'http_charset': http_charset,
                         'surt_uri': surt_uri,
                         'host': host,
-                        # Partition columns
                         'path': filename,
                         'year': year_str,
                         'month': month_str,
                         'day': day_str
                     }
                 except Exception as e:
-                    # Log internal record errors but don't stop the stream
                     continue
                     
         except Exception as e:
@@ -230,7 +228,7 @@ def main():
             # E. Write to GCS
             pipes.log.info(f"Writing to {out_root}...")
             final_df.write \
-                .mode("append") \
+                .mode("overwrite") \
                 .partitionBy("year", "month", "day", "path", "main_lang") \
                 .parquet(out_root)
             pipes.log.info("Job Complete.")
