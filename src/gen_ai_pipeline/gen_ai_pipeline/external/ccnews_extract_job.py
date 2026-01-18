@@ -174,73 +174,71 @@ def main():
         aws_secret_key = context.get_extra("ASCII_AWS_SECRET_ACCESS_KEY")
         if not aws_access_key or not aws_secret_key:
             raise RuntimeError("Missing ASCII_AWS_ACCESS_KEY_ID / ASCII_AWS_SECRET_ACCESS_KEY env vars")
+        pipes.log.info(f"Starting CC-NEWS extract for {year}-{month}")
 
-        with open_dagster_pipes() as pipes:
-            pipes.log.info(f"Starting CC-NEWS extract for {year}-{month}")
+        spark = SparkSession.builder.appName("CC-NEWS").getOrCreate()
 
-            spark = SparkSession.builder.appName("CC-NEWS").getOrCreate()
-
-            s3_client = boto3.client('s3', 
-                                    aws_access_key_id=aws_access_key,
-                                    aws_secret_access_key=aws_secret_key)
+        s3_client = boto3.client('s3', 
+                                 aws_access_key_id=aws_access_key,
+                                 aws_secret_access_key=aws_secret_key)
             
-            paths_gz_key = f'crawl-data/CC-NEWS/{year}/{month}/warc.paths.gz'
-            response = s3_client.get_object(Bucket='commoncrawl', Key=paths_gz_key)
-            decompressed_bytes = gzip.decompress(response['Body'].read())
+        paths_gz_key = f'crawl-data/CC-NEWS/{year}/{month}/warc.paths.gz'
+        response = s3_client.get_object(Bucket='commoncrawl', Key=paths_gz_key)
+        decompressed_bytes = gzip.decompress(response['Body'].read())
             
             # Read paths into a list
-            warc_paths = [line.decode('utf-8').strip() for line in decompressed_bytes.splitlines()]
+        warc_paths = [line.decode('utf-8').strip() for line in decompressed_bytes.splitlines()]
             
             # B. Create a simple DataFrame of paths to distribute work
             # Repartition determines parallelism. e.g., if you have 1000 files and 100 partitions, 
             # each task processes ~10 files.
-            paths_df = spark.createDataFrame([(p,) for p in warc_paths], ["warc_path"]).repartition(100)
+        paths_df = spark.createDataFrame([(p,) for p in warc_paths], ["warc_path"]).repartition(100)
 
             # C. Define Output Schema
-            schema = StructType([
-                StructField("uri", StringType(), True),
-                StructField("text", StringType(), True),
-                StructField("html", StringType(), True),
-                StructField("main_lang", StringType(), True),
-                StructField("langs", ArrayType(StringType()), True),
-                StructField("confs", ArrayType(FloatType()), True),
-                StructField("http_date", StringType(), True),
-                StructField("http_last_modified", StringType(), True),
-                StructField("http_charset", StringType(), True),
-                StructField("surt_uri", StringType(), True),
-                StructField("host", StringType(), True),
-                # Partition cols
-                StructField("path", StringType(), True),
-                StructField("year", StringType(), True),
-                StructField("month", StringType(), True),
-                StructField("day", StringType(), True),
-            ])
+        schema = StructType([
+            StructField("uri", StringType(), True),
+            StructField("text", StringType(), True),
+            StructField("html", StringType(), True),
+            StructField("main_lang", StringType(), True),
+            StructField("langs", ArrayType(StringType()), True),
+            StructField("confs", ArrayType(FloatType()), True),
+            StructField("http_date", StringType(), True),
+            StructField("http_last_modified", StringType(), True),
+            StructField("http_charset", StringType(), True),
+            StructField("surt_uri", StringType(), True),
+            StructField("host", StringType(), True),
+            # Partition cols
+            StructField("path", StringType(), True),
+            StructField("year", StringType(), True),
+            StructField("month", StringType(), True),
+            StructField("day", StringType(), True),
+        ])
 
             # D. Execute Processing (Map Partitions)
             # mapPartitions is more efficient than map because we init the S3 client once per partition
-            processed_rdd = paths_df.rdd.mapPartitions(
-                lambda iterator: process_warc_partition(iterator, aws_access_key, aws_secret_key)
-            )
+        processed_rdd = paths_df.rdd.mapPartitions(
+            lambda iterator: process_warc_partition(iterator, aws_access_key, aws_secret_key)
+        )
             
             # Convert back to DataFrame
-            final_df = spark.createDataFrame(processed_rdd, schema=schema)
-            final_df.show()
-            # E. Write to GCS
-            pipes.log.info(f"Writing to {out_root}...")
-            final_df.write \
-                .mode("overwrite") \
-                .partitionBy("year", "month", "day", "path", "main_lang") \
-                .parquet(out_root)
-            pipes.log.info("Job Complete.")
-            pipes.report_asset_materialization(
-                metadata={
-                    "year": year,
-                    "month": month,
-                    "out_root": out_root,
-                }
-            )
-            pipes.log.info("Done.")
-            spark.stop()
+        final_df = spark.createDataFrame(processed_rdd, schema=schema)
+        final_df.show()
+        # E. Write to GCS
+        pipes.log.info(f"Writing to {out_root}...")
+        final_df.write \
+            .mode("overwrite") \
+            .partitionBy("year", "month", "day", "path", "main_lang") \
+            .parquet(out_root)
+        pipes.log.info("Job Complete.")
+        pipes.report_asset_materialization(
+            metadata={
+                "year": year,
+                "month": month,
+                "out_root": out_root,
+            }
+        )
+        pipes.log.info("Done.")
+        spark.stop()
 
 
 if __name__ == "__main__":

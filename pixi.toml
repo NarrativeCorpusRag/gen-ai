@@ -20,6 +20,7 @@ pip = "~=25.2"
 pydantic = "~=2.12"
 dagster = "~=1.12"
 pyspark= "~=3.5"
+pylatexenc = "*"
 
 [feature.pipeline.pypi-dependencies]
 boto3 = "~=1.40"
@@ -41,6 +42,9 @@ FastWARC="~=0.15"
 Resiliparse = "~=0.15"
 tldextract = "~=5.3"
 idna = "~=3.11"
+docling = "~=2.68"
+trafilatura = "~=2.0"
+nltk = "~=3.9"
 
 [feature.docs.dependencies]
 nodejs = "~=24.4"

@@ -6,7 +6,7 @@ from dagster_polars import PolarsParquetIOManager
 
 from gen_ai_pipeline.assets.index_asset import cc_news_index
 from gen_ai_pipeline.assets.ccnews_collect import ccnews_html_text_month
-
+from gen_ai_pipeline.assets.ccnews_preprocess import ccnews_preprocess
 # Dagster Pipes + GCP
 from dagster_gcp.pipes import (
     PipesDataprocJobClient,
@@ -59,7 +59,7 @@ def make_dataproc_job_client() -> PipesDataprocJobClient:
 
 
 defs = Definitions(
-    assets=[cc_news_index, ccnews_html_text_month],
+    assets=[cc_news_index, ccnews_html_text_month, ccnews_preprocess],
     resources={
         "gcs_parquet_io_manager": PolarsParquetIOManager(
             base_dir="gs://gen-ai-tu/",
