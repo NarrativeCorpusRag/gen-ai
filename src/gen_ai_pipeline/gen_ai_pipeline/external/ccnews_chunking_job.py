@@ -59,11 +59,8 @@ class PreprocessingConfig:
     # Processing
     batch_size: int = 1000
     num_partitions: int = 200
-    
-def main():
-    gcs_client = GCSClient()
 
-    def chunk_text_for_rag(
+def chunk_text_for_rag(
         text: str, 
         chunk_size: int = 512, 
         overlap: int = 50
@@ -129,8 +126,7 @@ def main():
             chunk['chunk_index'] = i
         
         return chunks
-
-    def chunk_partition(iterator, config: PreprocessingConfig):
+def chunk_partition(iterator, config: PreprocessingConfig):
         """
         Chunk documents for RAG
         This runs on worker nodes via mapPartitions
@@ -166,10 +162,10 @@ def main():
                     }
                     
             except Exception as e:
-                pipes.log.error(f"Error chunking document: {e}")
+                print(f"Error chunking document: {e}")
                 continue
 
-    def create_chunk_schema() -> StructType:
+def create_chunk_schema() -> StructType:
         """Create schema for chunked documents (for RAG)"""
         return StructType([
             StructField("chunk_id", StringType(), False),
@@ -187,6 +183,8 @@ def main():
             StructField("day", StringType(), True),
         ])
 
+def main():
+    gcs_client = GCSClient()
 
     with open_dagster_pipes(
         context_loader=PipesGCSContextLoader(client=gcs_client),

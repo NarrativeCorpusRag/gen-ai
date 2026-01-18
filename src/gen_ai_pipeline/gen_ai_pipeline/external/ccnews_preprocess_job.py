@@ -329,167 +329,162 @@ class QualityFilters:
         
         return True, "passed", filter_results
 
+def clean_extracted_text(text: str) -> str:
+    """
+    Clean extracted text by removing common artifacts
+    """
+    if not text:
+        return ""
+    
+    # Remove multiple newlines
+    text = re.sub(r'\n{3,}', '\n\n', text)
+    
+    # Remove multiple spaces
+    text = re.sub(r'[ \t]+', ' ', text)
+    
+    # Remove lines that are just navigation/boilerplate
+    lines = text.split('\n')
+    cleaned_lines = []
+    
+    skip_patterns = [
+        r'^(home|menu|navigation|search|login|sign in|sign up|register)$',
+        r'^(share|tweet|pin|email|print)$',
+        r'^(facebook|twitter|instagram|linkedin|youtube)$',
+        r'^\s*[|•·-]\s*$',
+        r'^©.*\d{4}',
+        r'^all rights reserved',
+    ]
+    
+    for line in lines:
+        line_stripped = line.strip().lower()
+        skip = False
+        for pattern in skip_patterns:
+            if re.match(pattern, line_stripped, re.IGNORECASE):
+                skip = True
+                break
+        if not skip:
+            cleaned_lines.append(line)
+    
+    return '\n'.join(cleaned_lines).strip()
+
+
+def extract_text_with_docling(html: str) -> Optional[str]:
+    """
+    Extract clean text from HTML using Docling
+    Falls back to trafilatura if Docling fails
+    """
+    if not html or not html.strip():
+        return None
+    
+    try:
+        from docling.document_converter import DocumentConverter
+        from docling.datamodel.base_models import InputFormat
+        
+        converter = DocumentConverter(
+            allowed_formats=[InputFormat.HTML]
+        )
+        
+        result = converter.convert_string(html, input_format=InputFormat.HTML)
+        
+        if result and result.document:
+            text = result.document.export_to_text()
+            return text.strip() if text else None
+            
+    except Exception as e:
+        # Can't use pipes.log here - just print or pass
+        print(f"Docling extraction failed: {e}, falling back to trafilatura")
+    
+    # Fallback to trafilatura
+    try:
+        from trafilatura import extract
+        text = extract(html, include_comments=False, include_tables=True)
+        return text.strip() if text else None
+    except Exception as e:
+        print(f"Trafilatura extraction also failed: {e}")
+    
+    return None
+
+
+def process_partition_docling(iterator, config: PreprocessingConfig):
+    """
+    Process a partition of rows - runs on workers.
+    MUST be at module level to be picklable.
+    """
+    import hashlib
+    
+    # Initialize filters once per partition
+    filters = QualityFilters(config)
+    
+    for row in iterator:
+        try:
+            html = row.html
+            
+            # Extract text
+            extracted_text = extract_text_with_docling(html)
+            
+            if not extracted_text:
+                continue
+            
+            # Clean text
+            extracted_text = clean_extracted_text(extracted_text)
+            
+            if not extracted_text:
+                continue
+            
+            # Apply quality filters
+            passed, reason, _ = filters.apply_all_filters(extracted_text)
+            
+            # Generate doc ID
+            doc_id = hashlib.sha256(row.uri.encode()).hexdigest()[:16]
+            
+            yield {
+                'doc_id': doc_id,
+                'uri': row.uri,
+                'host': row.host,
+                'extracted_text': extracted_text,
+                'word_count': len(extracted_text.split()),
+                'quality_passed': passed,
+                'quality_reason': reason,
+                'http_date': row.http_date,
+                'year': row.year,
+                'month': row.month,
+                'day': row.day,
+            }
+
+        except Exception as e:
+            print(f"Error processing row {getattr(row, 'uri', 'unknown')}: {e}")
+            continue
+
+
+def create_processing_schema() -> StructType:
+    """Create schema for processed documents"""
+    return StructType([
+        StructField("doc_id", StringType(), False),
+        StructField("uri", StringType(), True),
+        StructField("host", StringType(), True),
+        StructField("extracted_text", StringType(), True),
+        StructField("word_count", IntegerType(), True),
+        StructField("quality_passed", BooleanType(), True),
+        StructField("quality_reason", StringType(), True),
+        StructField("http_date", StringType(), True),
+        StructField("year", StringType(), True),
+        StructField("month", StringType(), True),
+        StructField("day", StringType(), True),
+    ])
+
+
+# ============================================================
+# main() now only contains driver code
+# ============================================================
 
 def main():
     gcs_client = GCSClient()
-
-    def clean_extracted_text(text: str) -> str:
-        """
-        Clean extracted text by removing common artifacts
-        """
-        if not text:
-            return ""
-        
-        # Remove multiple newlines
-        text = re.sub(r'\n{3,}', '\n\n', text)
-        
-        # Remove multiple spaces
-        text = re.sub(r'[ \t]+', ' ', text)
-        
-        # Remove lines that are just navigation/boilerplate
-        lines = text.split('\n')
-        cleaned_lines = []
-        
-        skip_patterns = [
-            r'^(home|menu|navigation|search|login|sign in|sign up|register)$',
-            r'^(share|tweet|pin|email|print)$',
-            r'^(facebook|twitter|instagram|linkedin|youtube)$',
-            r'^\s*[|•·-]\s*$',  # Just separator characters
-            r'^©.*\d{4}',  # Copyright lines
-            r'^all rights reserved',
-        ]
-        
-        for line in lines:
-            line_stripped = line.strip().lower()
-            skip = False
-            for pattern in skip_patterns:
-                if re.match(pattern, line_stripped, re.IGNORECASE):
-                    skip = True
-                    break
-            if not skip:
-                cleaned_lines.append(line)
-        
-        return '\n'.join(cleaned_lines).strip()
-
-    def extract_text_with_docling(html: str) -> Optional[str]:
-        """
-        Extract clean text from HTML using Docling
-        Falls back to trafilatura if Docling fails
-        """
-        if not html or not html.strip():
-            return None
-        
-        try:
-            from docling.document_converter import DocumentConverter
-            from docling.datamodel.base_models import InputFormat
-            
-            converter = DocumentConverter(
-                allowed_formats=[InputFormat.HTML]
-            )
-            
-            # Convert HTML string
-            result = converter.convert_string(html, input_format=InputFormat.HTML)
-            
-            if result and result.document:
-                # Export to plain text (or markdown)
-                text = result.document.export_to_text()
-                return text.strip() if text else None
-                
-        except Exception as e:
-            pipes.log.debug(f"Docling extraction failed: {e}, falling back to trafilatura")
-        
-        # Fallback to trafilatura
-        try:
-            from trafilatura import extract
-            text = extract(html, include_comments=False, include_tables=True)
-            return text.strip() if text else None
-        except Exception as e:
-            pipes.log.debug(f"Trafilatura extraction also failed: {e}")
-        
-        return None
-
-    def process_partition_docling(iterator, config: PreprocessingConfig):
-        """
-        This function runs on the worker.
-        It MUST be at the top level to be easily pickled.
-        """
-        # Re-import dependencies inside the worker function to be safe
-        import hashlib
-        
-        # Initialize filters once per partition
-        filters = QualityFilters(config)
-        
-        for row in iterator:
-            try:
-                html = row.html
-                
-                # Extract text
-                extracted_text = extract_text_with_docling(html)
-                
-                if not extracted_text:
-                    continue
-                
-                # Clean text
-                extracted_text = clean_extracted_text(extracted_text)
-                
-                if not extracted_text:
-                    continue
-                
-                # Apply quality filters
-                passed, reason, _ = filters.apply_all_filters(extracted_text)
-                
-                # Generate doc ID
-                doc_id = hashlib.sha256(row.uri.encode()).hexdigest()[:16]
-                
-                yield {
-                    'doc_id': doc_id,
-                    'uri': row.uri,
-                    'host': row.host,
-                    'extracted_text': extracted_text,
-                    'word_count': len(extracted_text.split()),
-                    'quality_passed': passed,
-                    'quality_reason': reason,
-                    'http_date': row.http_date,
-                    'year': row.year,
-                    'month': row.month,
-                    'day': row.day,
-                }
-
-            except Exception as e:
-                # We can't use 'pipes.log' here because 'pipes' is in the driver's main() scope!
-                # Use standard print (goes to stdout/executor logs)
-                print(f"Error processing row {getattr(row, 'uri', 'unknown')}: {e}")
-                continue
-
-    def create_processing_schema() -> StructType:
-        """Create schema for processed documents"""
-        return StructType([
-            # Document identifiers
-            StructField("doc_id", StringType(), False),
-            StructField("uri", StringType(), True),
-            StructField("host", StringType(), True),
-            
-            # Extracted content
-            StructField("extracted_text", StringType(), True),
-            StructField("word_count", IntegerType(), True),
-            
-            # Quality filter results
-            StructField("quality_passed", BooleanType(), True),
-            StructField("quality_reason", StringType(), True),
-            
-            # Metadata
-            StructField("http_date", StringType(), True),
-            StructField("year", StringType(), True),
-            StructField("month", StringType(), True),
-            StructField("day", StringType(), True),
-        ])
         
     with open_dagster_pipes(
         context_loader=PipesGCSContextLoader(client=gcs_client),
         message_writer=PipesGCSMessageWriter(client=gcs_client),
         params_loader=PipesCliArgsParamsLoader(),
     ) as pipes:
-        # parameters still come from argparse (your current approach), OR from pipes.get_params()
         pipes.log.info("Starting CC-NEWS extract job")
         context = PipesContext.get()
         year = context.get_extra("year")
@@ -497,6 +492,7 @@ def main():
         repartition = context.get_extra("repartition")
         out_root = context.get_extra("out_root")
         docs_uri = context.get_extra("docs_uri")
+        
         config = PreprocessingConfig(
             target_language="en",
             chunk_size=512,
@@ -506,28 +502,29 @@ def main():
         pipes.log.info(f"Starting CC-NEWS extract for {year}-{month}")
 
         spark = SparkSession.builder.appName("CC-NEWS").getOrCreate()
+        
         df = (
             spark.read.option("basePath", docs_uri)
             .parquet(f"{docs_uri}year={year}/month={month}")
-            .filter(F.col("main_lang") == "en").select("uri", "host", "html", "text", "year", "month", "day", "main_lang", "http_date")
-            .repartition(config.num_partitions) )
+            .filter(F.col("main_lang") == "en")
+            .select("uri", "host", "html", "text", "year", "month", "day", "main_lang", "http_date")
+            .repartition(config.num_partitions)
+        )
         
+        # Now this works because process_partition_docling is at module level
         processed_rdd = df.rdd.mapPartitions(
             lambda it: process_partition_docling(it, config)
-            )
+        )
         processed_df = spark.createDataFrame(processed_rdd, schema=create_processing_schema())
         
-        # Cache for reuse
         processed_df = processed_df.cache()
         
-        # Log statistics
         total_processed = processed_df.count()
         passed_count = processed_df.filter(F.col("quality_passed") == True).count()
 
         pipes.log.info(f"Total processed: {total_processed}")
         pipes.log.info(f"Passed quality filters: {passed_count} ({passed_count/total_processed*100:.1f}%)")
         
-        # Show filter rejection reasons
         pipes.log.info("Filter rejection breakdown:")
         processed_df.filter(F.col("quality_passed") == False) \
             .groupBy("quality_reason") \
