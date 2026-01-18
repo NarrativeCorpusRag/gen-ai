@@ -54,17 +54,22 @@ def ccnews_preprocess(
     zone_uri = os.getenv("DATAPROC_ZONE_URI")
     policy_uri = f"projects/{project_id}/regions/{region}/autoscalingPolicies/gen-ai-test-eu"    
     props = {
-        # required for Pipes messages to work
-        # "dataproc:pip.packages": "dagster-pipes,google-cloud-storage",
         "spark.pyspark.python": "/opt/gen-ai-env/env/bin/python",
         "spark.pyspark.driver.python": "/opt/gen-ai-env/env/bin/python",
-        # make AWS creds available to driver + executors
         "spark.sql.sources.partitionOverwriteMode": "dynamic",
-        "spark:spark.executor.memory": "20g",
-        "spark:spark.executor.cores": "4",
-        "spark:spark.executor.memoryOverhead": "4g",
-        "spark:spark.sql.shuffle.partitions": "48",
-        "spark:spark.default.parallelism": "48",
+
+        "spark.executor.memory": "14g",
+        "spark.executor.memoryOverhead": "4g",
+        "spark.driver.memory": "8g",
+        "spark.executor.cores": "5",
+
+        "spark.sql.shuffle.partitions": "1000",
+        "spark.default.parallelism": "1000",
+        "spark.network.timeout": "800s",
+        "spark.executor.heartbeatInterval": "60s",
+
+        "spark.hadoop.fs.gs.http.connect-timeout": "60000",
+        "spark.hadoop.fs.gs.http.read-timeout": "60000",
     }
     # Create the cluster client.
     cluster_client = dataproc.ClusterControllerClient(
@@ -101,7 +106,7 @@ def ccnews_preprocess(
                 "num_instances": 4, # minimum is 2
                 "machine_type_uri": "n1-standard-16",
                 "disk_config": {"boot_disk_size_gb": 200},
-                "is_preemptible": True, # True = Spot instances (Cheaper), False = Standard
+                "is_preemptible": False,
             },
             "autoscaling_config": {
                 "policy_uri": policy_uri

@@ -209,16 +209,20 @@ def main():
 
         spark = SparkSession.builder.appName("CC-NEWS").getOrCreate()
         df = (
-            spark.read.option("basePath", docs_uri)
+            spark.read
             .parquet(f"{docs_uri}year={year}/month={month}")
             .filter(F.col("quality_passed") == True)
+            .withColumn("year", F.lit(int(year)))
+            .withColumn("month", F.lit(int(month)))
+            .select("uri", "host", "html", "text", "year", "month", "day", "main_lang", "http_date")
             .repartition(config.num_partitions) )
+
         chunked_rdd = df.rdd.mapPartitions(
                 lambda it: chunk_partition(it, config)
         )
             
         chunked_df = spark.createDataFrame(chunked_rdd, schema=create_chunk_schema())
-            
+        chunked_df.show()
         chunk_count = chunked_df.count()
         pipes.log.info(f"Total chunks created: {chunk_count}")
             

@@ -56,16 +56,24 @@ def ccnews_html_text_month(
     zone_uri = os.getenv("DATAPROC_ZONE_URI")
     policy_uri = f"projects/{project_id}/regions/{region}/autoscalingPolicies/gen-ai-test-eu"    
     props = {
-        # required for Pipes messages to work
-        # "dataproc:pip.packages": "dagster-pipes,google-cloud-storage",
         "spark.pyspark.python": "/opt/gen-ai-env/env/bin/python",
         "spark.pyspark.driver.python": "/opt/gen-ai-env/env/bin/python",
-        # make AWS creds available to driver + executors
+        
         "spark.yarn.appMasterEnv.ASCII_AWS_ACCESS_KEY_ID": aws_key,
         "spark.yarn.appMasterEnv.ASCII_AWS_SECRET_ACCESS_KEY": aws_secret,
         "spark.executorEnv.ASCII_AWS_ACCESS_KEY_ID": aws_key,
         "spark.executorEnv.ASCII_AWS_SECRET_ACCESS_KEY": aws_secret,
-        "spark.sql.sources.partitionOverwriteMode": "dynamic"
+        "spark.sql.sources.partitionOverwriteMode": "dynamic",
+              
+        "spark.executor.cores": "5",
+        "spark.executor.memory": "14g",
+        "spark.executor.memoryOverhead": "4g", # Buffer for Python/C overhead
+        "spark.driver.memory": "8g",
+        # Stability settings
+        "spark.yarn.maxAppAttempts": "1", # Fail fast if it actually crashes
+        "spark.task.maxFailures": "10",   # Tolerate some bad HTML files
+        "spark.network.timeout": "600s",  # Allow slower connections
+    
     }
     # Create the cluster client.
     cluster_client = dataproc.ClusterControllerClient(

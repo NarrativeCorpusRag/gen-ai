@@ -45,6 +45,8 @@ idna = "~=3.11"
 docling = "~=2.68"
 trafilatura = "~=2.0"
 nltk = "~=3.9"
+pymongo = "~=4.16.0"
+langchain-mongodb = "~=0.11"
 
 [feature.docs.dependencies]
 nodejs = "~=24.4"

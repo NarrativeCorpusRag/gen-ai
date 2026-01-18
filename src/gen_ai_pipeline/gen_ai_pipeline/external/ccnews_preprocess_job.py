@@ -473,10 +473,6 @@ def create_processing_schema() -> StructType:
     ])
 
 
-# ============================================================
-# main() now only contains driver code
-# ============================================================
-
 def main():
     gcs_client = GCSClient()
         
@@ -504,14 +500,15 @@ def main():
         spark = SparkSession.builder.appName("CC-NEWS").getOrCreate()
         
         df = (
-            spark.read.option("basePath", docs_uri)
+            spark.read
             .parquet(f"{docs_uri}year={year}/month={month}")
             .filter(F.col("main_lang") == "en")
-            .select("uri", "host", "html", "text", "year", "month", "day", "main_lang", "http_date")
+            .select("uri", "host", "html", "text", "day", "main_lang", "http_date")
+            .withColumn("year", F.lit(year))
+            .withColumn("month", F.lit(month))
             .repartition(config.num_partitions)
         )
         
-        # Now this works because process_partition_docling is at module level
         processed_rdd = df.rdd.mapPartitions(
             lambda it: process_partition_docling(it, config)
         )
@@ -534,7 +531,7 @@ def main():
         
         pipes.log.info("Saving processed documents...")
 
-        processed_df.filter(F.col("quality_passed") == True) \
+        processed_df\
             .write \
             .mode("overwrite") \
             .partitionBy("year", "month", "day") \
