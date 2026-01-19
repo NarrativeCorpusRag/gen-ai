@@ -18,6 +18,7 @@ PY="$DEST/env/bin/python"
 "$PY" -m pip install --upgrade pip
 "$PY" -m pip install surt
 
+
 # Sanity check
 "$PY" -c "import boto3, surt; print('deps ok')"
 

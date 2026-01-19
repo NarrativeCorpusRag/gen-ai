@@ -1,6 +1,8 @@
 import os
 import dotenv
 from dagster import Definitions
+from dagster import Definitions, load_assets_from_modules
+from dagster_pyspark import PySparkResource
 
 from dagster_polars import PolarsParquetIOManager
 
@@ -57,6 +59,40 @@ def make_dataproc_job_client() -> PipesDataprocJobClient:
         ),
     )
 
+packages = [
+    "io.delta:delta-spark_2.12:3.2.0",
+    "org.postgresql:postgresql:42.7.0",
+    "org.apache.hadoop:hadoop-aws:3.3.4",
+    "org.apache.spark:spark-hadoop-cloud_2.12:3.5.0",
+    "com.johnsnowlabs.nlp:spark-nlp_2.12:5.3.3",
+]
+# Define the Resource
+local_spark = PySparkResource(
+    spark_config={
+        # --- Concurrency ---
+        # 4 threads to prevent GPU OOM. 
+        "spark.master": "local[4]", 
+        "spark.default.parallelism": "16",
+        "spark.sql.shuffle.partitions": "16",
+        
+        # --- Memory (Driver takes all in local mode) ---
+        "spark.driver.memory": "200g",
+        "spark.driver.maxResultSize": "20g",
+        "spark.driver.memoryOverhead": "50g",
+        
+        # --- Performance ---
+        "spark.sql.execution.arrow.pyspark.enabled": "true",
+        "spark.sql.parquet.enableVectorizedReader": "true",
+        "spark.rapids.sql.enabled": "true", # Disable RAPIDS to save VRAM for PyTorch
+        
+        # --- GCS / S3 Configs
+        "spark.jars": "https://repo1.maven.org/maven2/com/google/cloud/bigdataoss/gcs-connector/hadoop3-2.2.19/gcs-connector-hadoop3-2.2.19-shaded.jar",
+        "spark.jars.packages": ",".join(packages),
+        "spark.hadoop.fs.gs.impl": "com.google.cloud.hadoop.fs.gcs.GoogleHadoopFileSystem",
+        "spark.hadoop.google.cloud.auth.service.account.enable": "true",
+        "spark.hadoop.google.cloud.auth.service.account.json.keyfile": os.environ.get("GOOGLE_APPLICATION_CREDENTIALS"),
+    }
+)
 
 defs = Definitions(
     assets=[cc_news_index, ccnews_html_text_month, ccnews_preprocess],
@@ -65,7 +101,7 @@ defs = Definitions(
             base_dir="gs://gen-ai-tu/",
             storage_options=get_gcs_options(),
         ),
-        # THIS is what fixes your error:
         "dataproc_job_client": make_dataproc_job_client(),
+        "pyspark": local_spark,
     },
 )

@@ -506,7 +506,7 @@ def main():
             .select("uri", "host", "html", "text", "day", "main_lang", "http_date")
             .withColumn("year", F.lit(year))
             .withColumn("month", F.lit(month))
-            .repartition(config.num_partitions)
+            .repartition(1000)
         )
         
         processed_rdd = df.rdd.mapPartitions(
