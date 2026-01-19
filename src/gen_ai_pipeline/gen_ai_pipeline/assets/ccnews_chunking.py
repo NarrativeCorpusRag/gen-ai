@@ -35,7 +35,9 @@ class DataCollectionConfig(Config):
     out_root: str = "gs://gen-ai-tu/news"
     
 @asset(partitions_def=monthly_partitions,
-       deps=[ccnews_preprocess],)
+       deps=[ccnews_preprocess],
+       group_name="etl",
+       compute_kind="gcp",)
 def ccnews_chunking(
     context: AssetExecutionContext,
     config: DataCollectionConfig,

@@ -39,11 +39,11 @@ class EmbeddingConfig(Config):
 
 @asset(
     compute_kind="pyspark",
-    group_name="pipeline",
+    group_name="etl",
     deps=[ccnews_chunking],
     partitions_def=monthly_partitions,
 )
-def local_news_embeddings(context, config: EmbeddingConfig, pyspark: PySparkResource):
+def ccnews_embeddings(context, config: EmbeddingConfig, pyspark: PySparkResource):
     """
     Local embedding generation using PySparkResource.
     """

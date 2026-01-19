@@ -36,7 +36,9 @@ def upload_file_to_gcs(local_path: str, gcs_uri: str) -> None:
 @asset(
     key_prefix=["news"],
     name="index",
-    description="Scrapes Common Crawl index and saves partitioned parquet to GCS"
+    description="Scrapes Common Crawl index and saves partitioned parquet to GCS",
+    group_name="seeds",
+    compute_kind="polars",
 )
 def cc_news_index(context: AssetExecutionContext) -> MaterializeResult:
     s3_client = boto3.client(

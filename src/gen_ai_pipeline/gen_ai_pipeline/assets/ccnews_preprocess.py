@@ -35,7 +35,9 @@ class DataCollectionConfig(Config):
     out_root: str = "gs://gen-ai-tu/news/clean"
     
 @asset(partitions_def=monthly_partitions,
-       deps=[ccnews_html_text_month],)
+       deps=[ccnews_html_text_month],
+       group_name="etl",
+       compute_kind="gcp",)
 def ccnews_preprocess(
     context: AssetExecutionContext,
     config: DataCollectionConfig,

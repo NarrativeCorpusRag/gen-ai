@@ -9,6 +9,9 @@ from dagster_polars import PolarsParquetIOManager
 from gen_ai_pipeline.assets.index_asset import cc_news_index
 from gen_ai_pipeline.assets.ccnews_collect import ccnews_html_text_month
 from gen_ai_pipeline.assets.ccnews_preprocess import ccnews_preprocess
+from gen_ai_pipeline.assets.ccnews_chunking import ccnews_chunking
+from gen_ai_pipeline.assets.ccnews_chunk_embedding import ccnews_embeddings
+
 # Dagster Pipes + GCP
 from dagster_gcp.pipes import (
     PipesDataprocJobClient,
@@ -95,7 +98,7 @@ local_spark = PySparkResource(
 )
 
 defs = Definitions(
-    assets=[cc_news_index, ccnews_html_text_month, ccnews_preprocess],
+    assets=[cc_news_index, ccnews_html_text_month, ccnews_preprocess, ccnews_chunking, ccnews_embeddings],
     resources={
         "gcs_parquet_io_manager": PolarsParquetIOManager(
             base_dir="gs://gen-ai-tu/",
