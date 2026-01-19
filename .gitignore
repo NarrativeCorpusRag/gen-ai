@@ -215,5 +215,6 @@ __marimo__/
 *.parquet
 *.tar
 *.json
+*.tsv
 
 *.txt
