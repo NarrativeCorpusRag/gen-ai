@@ -13,6 +13,7 @@ pipeline = { features = ["base","pipeline", "etl", "graph"], solve-group = "pipe
 etl = { features = ["base","pipeline", "etl"], solve-group = "etl" }
 graph = { features = ["base","pipeline", "graph"], solve-group = "graph" }
 lint = { features = ["base","lint"], solve-group = "default" }
+graph-bis = { features = ["base","graph_bis"], solve-group = "notgraph" }
 
 [feature.base.dependencies]
 python = ">=3.11,<3.15"
@@ -25,6 +26,7 @@ pyspark= "~=3.5"
 pylatexenc = "*"
 fsspec = "==2025.10.0"
 antlr-python-runtime = "4.9.*"
+gcsfs = "*"
 
 [feature.pipeline.pypi-dependencies]
 boto3 = "~=1.40"
@@ -67,6 +69,16 @@ numpy = ">=1.15,<2.0a0"
 relik = { git = "https://github.com/HPicatto/relik.git", extras = ["cuda"] }
 maverick-coref = { git = "https://github.com/HPicatto/maverick-coref.git", extras = ["cuda"] }
 fastcoref = "~=2.1"
+
+[feature.graph_bis.dependencies]
+rich = ">=13.0.0,<14.0.0"
+numpy = "<2.0.0"
+fsspec = "==2025.10.0"
+
+[feature.graph_bis.pypi-dependencies]
+polars = "~=1.37"
+relik = {version="~=1.0", extras=["cuda"]}
+gcsfs = "==2025.10.0"
 
 [feature.docs.dependencies]
 nodejs = "~=24.4"
