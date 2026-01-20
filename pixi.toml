@@ -66,6 +66,7 @@ numpy = ">=1.15,<2.0a0"
 [feature.graph.pypi-dependencies]
 relik = { git = "https://github.com/HPicatto/relik.git", extras = ["cuda"] }
 maverick-coref = { git = "https://github.com/HPicatto/maverick-coref.git", extras = ["cuda"] }
+fastcoref = "~=2.1"
 
 [feature.docs.dependencies]
 nodejs = "~=24.4"

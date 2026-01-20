@@ -161,6 +161,6 @@ def ccnews_html_text_month(
     finally:
         if created:
             context.log.info(f"Deleting cluster: {cluster_name}")
-            #cluster_client.delete_cluster(
-            #    request={"project_id": project_id, "region": region, "cluster_name": cluster_name}
-            #)
+            cluster_client.delete_cluster(
+                request={"project_id": project_id, "region": region, "cluster_name": cluster_name}
+            )
