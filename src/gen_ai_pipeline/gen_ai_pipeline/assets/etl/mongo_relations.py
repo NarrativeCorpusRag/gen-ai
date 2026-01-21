@@ -47,6 +47,7 @@ def mongodb_relations_spark(
     df = spark.read.parquet(config.relations_path)
     
     df_upload = df.select(
+        F.col("relation_id").alias("_id"),
         F.col("relation_id"),
         F.col("chunk_id"),
         F.col("head_text"),

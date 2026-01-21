@@ -115,4 +115,5 @@ def write_to_mongodb_spark_connector(
         .option("database", database_name) \
         .option("collection", collection_name) \
         .option("replaceDocument", "true") \
+        .option("maxBatchSize", 512) \
         .save()

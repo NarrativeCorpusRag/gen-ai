@@ -47,6 +47,7 @@ def mongodb_entities_spark(
     
     # Select needed columns
     df_upload = df.select(
+        F.col("entity_id").alias("_id"),
         F.col("entity_id"),
         F.col("chunk_id"),
         F.col("text"),
