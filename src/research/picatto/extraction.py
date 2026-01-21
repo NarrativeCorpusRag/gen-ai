@@ -17,7 +17,7 @@ OUTPUT_PATH = "gs://gen-ai-tu/news/graph_rag/"
 LOCAL_CHECKPOINT = "/tmp/graph_rag_checkpoint.json"
 
 NUM_GPUS = 2
-BATCH_SIZE = 512 
+BATCH_SIZE = 256 
 CONFIDENCE_THRESHOLD = 0.5
 
 # Joint model - MUCH faster

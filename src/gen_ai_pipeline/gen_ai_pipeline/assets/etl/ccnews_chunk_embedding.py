@@ -7,7 +7,7 @@ from dagster import (
 )
 from dagster_pyspark import PySparkResource
 from pyspark.sql.types import ArrayType, FloatType
-from gen_ai_pipeline.assets.ccnews_chunking import ccnews_chunking
+from gen_ai_pipeline.assets.etl.ccnews_chunking import ccnews_chunking_asset
 
 monthly_partitions = MonthlyPartitionsDefinition(start_date="2025-01-01")
 os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True"
@@ -40,7 +40,7 @@ class EmbeddingConfig(Config):
 @asset(
     compute_kind="pyspark",
     group_name="etl",
-    deps=[ccnews_chunking],
+    deps=[ccnews_chunking_asset],
     partitions_def=monthly_partitions,
 )
 def ccnews_embeddings(context, config: EmbeddingConfig, pyspark: PySparkResource):

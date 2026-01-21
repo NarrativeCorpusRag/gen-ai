@@ -11,7 +11,7 @@ from dagster_gcp.pipes import (
     PipesGCSMessageReader,
 )
 from typing import Optional
-from gen_ai_pipeline.assets.ccnews_collect import ccnews_html_text_month
+from gen_ai_pipeline.assets.etl.ccnews_preprocess import ccnews_preprocess
 
 monthly_partitions = MonthlyPartitionsDefinition(start_date="2025-01-01")
 
@@ -21,7 +21,7 @@ _CLUSTER_NAME_ALLOWED = re.compile(r"[^a-z0-9-]+")
 
 def _make_cluster_name(partition_key: str) -> str:
     # partition_key like "2025-10-01" (monthly partitions can still look like this)
-    base = f"news-preprocess-{partition_key}".lower()
+    base = f"news-chunking-{partition_key}".lower()
     base = _CLUSTER_NAME_ALLOWED.sub("-", base)
     base = base.strip("-")
     # Dataproc allows up to 51 chars
@@ -30,15 +30,15 @@ def _make_cluster_name(partition_key: str) -> str:
 class DataCollectionConfig(Config):
     year: int = 2025
     month: int = 10
-    docs_uri: str = "gs://gen-ai-tu/news/raw/"
+    docs_uri: str = "gs://gen-ai-tu/news/clean/"
     repartition: int = 100
-    out_root: str = "gs://gen-ai-tu/news/clean"
+    out_root: str = "gs://gen-ai-tu/news"
     
 @asset(partitions_def=monthly_partitions,
-       deps=[ccnews_html_text_month],
+       deps=[ccnews_preprocess],
        group_name="etl",
        compute_kind="gcp",)
-def ccnews_preprocess(
+def ccnews_chunking_asset(
     context: AssetExecutionContext,
     config: DataCollectionConfig,
     dataproc_job_client: PipesDataprocJobClient,
@@ -48,7 +48,7 @@ def ccnews_preprocess(
     year = int(pk[0:4])
     month = int(pk[5:7])
 
-    main_py = "gs://gen-ai-tu/artifacts/ccnews_preprocess_job.py"
+    main_py = "gs://gen-ai-tu/artifacts/ccnews_chunking_job.py"
     pyfiles: list[str] = []
     project_id = os.getenv("GCP_PROJECT", "datascience-team-427407")    
     region = os.getenv("GCP_CLUSTER_REGION", "us-central1")
@@ -56,22 +56,17 @@ def ccnews_preprocess(
     zone_uri = os.getenv("DATAPROC_ZONE_URI")
     policy_uri = f"projects/{project_id}/regions/{region}/autoscalingPolicies/gen-ai-test-eu"    
     props = {
+        # required for Pipes messages to work
+        # "dataproc:pip.packages": "dagster-pipes,google-cloud-storage",
         "spark.pyspark.python": "/opt/gen-ai-env/env/bin/python",
         "spark.pyspark.driver.python": "/opt/gen-ai-env/env/bin/python",
+        # make AWS creds available to driver + executors
         "spark.sql.sources.partitionOverwriteMode": "dynamic",
-
-        "spark.executor.memory": "14g",
-        "spark.executor.memoryOverhead": "4g",
-        "spark.driver.memory": "8g",
-        "spark.executor.cores": "5",
-
-        "spark.sql.shuffle.partitions": "1000",
-        "spark.default.parallelism": "1000",
-        "spark.network.timeout": "800s",
-        "spark.executor.heartbeatInterval": "60s",
-
-        "spark.hadoop.fs.gs.http.connect-timeout": "60000",
-        "spark.hadoop.fs.gs.http.read-timeout": "60000",
+        "spark:spark.executor.memory": "20g",
+        "spark:spark.executor.cores": "4",
+        "spark:spark.executor.memoryOverhead": "4g",
+        "spark:spark.sql.shuffle.partitions": "48",
+        "spark:spark.default.parallelism": "48",
     }
     # Create the cluster client.
     cluster_client = dataproc.ClusterControllerClient(
@@ -108,7 +103,7 @@ def ccnews_preprocess(
                 "num_instances": 4, # minimum is 2
                 "machine_type_uri": "n1-standard-16",
                 "disk_config": {"boot_disk_size_gb": 200},
-                "is_preemptible": False,
+                "is_preemptible": True, # True = Spot instances (Cheaper), False = Standard
             },
             "autoscaling_config": {
                 "policy_uri": policy_uri

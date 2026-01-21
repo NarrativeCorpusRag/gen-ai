@@ -4,7 +4,6 @@ import boto3
 import pandas as pd
 import polars as pl
 from io import BytesIO
-import dotenv
 from dagster import (
     asset, 
     AssetExecutionContext,
@@ -13,15 +12,11 @@ from dagster import (
     MaterializeResult,
     MetadataValue
 )
-from botocore import UNSIGNED
-from botocore.config import Config
-from typing import Dict
-from dagster_polars import PolarsParquetIOManager
-from ..helpers.gcloud_helpers import create_folder, get_gcs_options
+from gen_ai_pipeline.helpers.gcloud_helpers import create_folder
+
 warc_partitions_def = DynamicPartitionsDefinition(name="warc_files")
 
 import os
-import tempfile
 from google.cloud import storage
 
 def upload_file_to_gcs(local_path: str, gcs_uri: str) -> None:

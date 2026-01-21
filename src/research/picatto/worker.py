@@ -73,7 +73,7 @@ def gpu_worker(
     model_name: str,
     confidence_threshold: float
 ):
-    """Worker with SINGLE joint model"""
+    """Worker with fallback for bad texts"""
     import torch
     from relik import Relik
     
@@ -83,6 +83,29 @@ def gpu_worker(
     model = Relik.from_pretrained(model_name, device=device)
     print(f"[GPU {gpu_id}] Model loaded!")
     
+    def safe_batch_inference(texts: list, valid_mask: list) -> list:
+        """Batch only - skip failures"""
+        preds = [None] * len(texts)
+        valid_texts = [t for t, v in zip(texts, valid_mask) if v]
+        
+        if not valid_texts:
+            return preds
+        
+        try:
+            results = model(valid_texts)
+            if not isinstance(results, list):
+                results = [results]
+            
+            valid_idx = 0
+            for i, v in enumerate(valid_mask):
+                if v:
+                    preds[i] = results[valid_idx]
+                    valid_idx += 1
+        except Exception as e:
+            print(f"[GPU {gpu_id}] Batch skipped ({len(valid_texts)} texts): {type(e).__name__}")
+            # Return all None - don't fallback
+        
+        return preds
     while True:
         item = file_queue.get()
         if item is None:
@@ -91,7 +114,7 @@ def gpu_worker(
         file_idx, parquet_file = item
         
         try:
-            print(f"[GPU {gpu_id}] Processing file {file_idx}: {parquet_file}")
+            print(f"[GPU {gpu_id}] Processing file {file_idx}")
             df = pl.read_parquet(parquet_file)
             
             if df.is_empty():
@@ -106,29 +129,18 @@ def gpu_worker(
                 batch_df = df.slice(batch_start, batch_size)
                 texts = batch_df['chunk_text'].to_list()
                 
-                # Filter empty/short texts
+                # Filter: must be string, not empty, reasonable length
                 valid_mask = [
-                    bool(t and isinstance(t, str) and len(t.strip()) > 20)
+                    bool(
+                        t and 
+                        isinstance(t, str) and 
+                        20 < len(t.strip()) < 50000  # Not too short, not too long
+                    )
                     for t in texts
                 ]
-                valid_texts = [t for t, v in zip(texts, valid_mask) if v]
                 
-                # Single model inference (instead of 2!)
-                preds = [None] * len(texts)
-                
-                if valid_texts:
-                    try:
-                        results = model(valid_texts)
-                        if not isinstance(results, list):
-                            results = [results]
-                        
-                        valid_idx = 0
-                        for i, v in enumerate(valid_mask):
-                            if v:
-                                preds[i] = results[valid_idx]
-                                valid_idx += 1
-                    except Exception as e:
-                        print(f"[GPU {gpu_id}] Inference error: {e}")
+                # Safe inference with fallback
+                preds = safe_batch_inference(texts, valid_mask)
                 
                 # Process results
                 chunk_ids = batch_df['chunk_id'].to_list()
@@ -179,8 +191,6 @@ def gpu_worker(
                     print(f"[GPU {gpu_id}] ✓ Written: {out_file}")
                 except Exception as e:
                     print(f"[GPU {gpu_id}] ✗ Write failed: {e}")
-                    import traceback
-                    traceback.print_exc()
             
             if all_entities:
                 try:
@@ -207,7 +217,7 @@ def gpu_worker(
             torch.cuda.empty_cache()
             
         except Exception as e:
-            print(f"[GPU {gpu_id}] Error on {parquet_file}: {e}")
+            print(f"[GPU {gpu_id}] Error on file {file_idx}: {e}")
             import traceback
             traceback.print_exc()
             result_queue.put((file_idx, 0, 0, 0, False))

@@ -18,6 +18,7 @@ graph-bis = { features = ["base","graph_bis"], solve-group = "notgraph" }
 [feature.base.dependencies]
 python = ">=3.11,<3.15"
 pip = "~=25.2"
+openjdk = "~=17.0"
 
 [feature.pipeline.dependencies]
 pydantic = "~=2.12"
