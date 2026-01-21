@@ -40,7 +40,6 @@ gcsfs = "*"
 
 [feature.pipeline.pypi-dependencies]
 boto3 = "~=1.40"
-boto3 = "~=1.40"
 botocore = "~=1.40"
 google-auth = "~=2.43"
 gcsfs = "~=2025.10"
