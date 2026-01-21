@@ -46,3 +46,5 @@ Execution Workflow
 3. Manual Query (For Interactive Testing)
 
 ### Examples
+
+files are pushed every day into s3 bucket by common crawl, but index (needed for index asset) is only updated once a month

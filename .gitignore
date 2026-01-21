@@ -215,6 +215,8 @@ __marimo__/
 *.parquet
 *.tar
 *.json
-*.tsv
 
 *.txt
+*.pdf
+environment.sh
+google-cloud-sdk/
