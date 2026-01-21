@@ -4,6 +4,9 @@ import pandas as pd
 from pymongo import MongoClient, UpdateOne
 from dagster import Config
 from dagster import ConfigurableResource
+import dotenv
+
+dotenv.load_dotenv(dotenv.find_dotenv())
 
 class MongoDBUploadConfig(Config):
     """Configuration for MongoDB upload"""
@@ -29,15 +32,15 @@ class MongoDBConfig(Config):
 
 class MongoDBResource(ConfigurableResource):
     """Dagster resource for MongoDB operations"""
-    connection_string: str
-    database_name: str
+    connection_string: str = os.getenv("MONGODB_URI")
+    database_name: str = 'DataScience'
     
-    def get_client(self) -> MongoClient:
-        return MongoClient(self.connection_string)
+def get_client(self) -> MongoClient:
+    return MongoClient(self.connectio_string)
     
-    def get_database(self):
-        client = self.get_client()
-        return client[self.database_name]
+def get_database(self):
+    client = self.get_client()
+    return client[self.database_name]
     
 
 def write_to_mongodb_partition(

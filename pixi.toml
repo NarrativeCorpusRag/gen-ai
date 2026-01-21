@@ -54,6 +54,8 @@ google-cloud-storage = "~=3.6"
 google-cloud-dataproc = "~=5.23"
 dagster-pipes = "~=1.12"
 polars = "~=1.35"
+google-genai = "~=1.59"
+openai = "~=2.15"
 
 [feature.etl.dependencies]
 
@@ -91,6 +93,9 @@ fsspec = "==2025.10.0"
 polars = "~=1.37"
 relik = { version = "~=1.0", extras = ["cuda"] }
 gcsfs = "==2025.10.0"
+google-genai = "~=1.59"
+openai = "~=2.15"
+pymongo = "~=4.16.0"
 
 [feature.format.dependencies]
 pytest = ">=8.4.2,<9"

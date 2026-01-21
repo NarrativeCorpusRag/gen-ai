@@ -2,9 +2,12 @@ from typing import List, Dict, Any, Optional
 from dataclasses import dataclass
 from dagster import (
     MonthlyPartitionsDefinition, 
+    get_dagster_logger
 )
 from pymongo import MongoClient
-
+import os
+from openai import OpenAI
+from google import genai
 
 monthly_partitions = MonthlyPartitionsDefinition(start_date="2025-01-01")
 
@@ -16,6 +19,7 @@ class RAGQueryResult:
     relations: List[Dict[str, Any]]
     context_text: str
     metadata: Dict[str, Any]
+    answer: Optional[str] = None 
 
 
 class RAGQueryEngine:
@@ -27,7 +31,9 @@ class RAGQueryEngine:
         self,
         mongodb_uri: str,
         database_name: str = "news_rag",
-        embedding_model = None,  # Your FlagEmbedding model
+        embedding_model = None,  # FlagEmbedding model
+        llm_provider: str = "openai",  # or "anthropic"
+        llm_model: str = "gpt-4-turbo-preview",
     ):
         self.client = MongoClient(mongodb_uri)
         self.db = self.client[database_name]
@@ -35,6 +41,75 @@ class RAGQueryEngine:
         self.entities_collection = self.db["entities"]
         self.relations_collection = self.db["relations"]
         self.embedding_model = embedding_model
+        self.relik_entity_model = None
+        
+        self.llm_provider = llm_provider
+        self.llm_model = llm_model
+        self._llm_client = None
+    
+    def _get_llm_client(self):
+        """Lazy load LLM client"""
+        if self._llm_client is None:
+            if self.llm_provider == "openai":
+                self._llm_client = OpenAI(api_key=os.environ.get("OPENAI_API_KEY"))
+            elif self.llm_provider == "gemini":
+                genai.configure(api_key=os.environ.get("GOOGLE_API_KEY"))
+                self._llm_client = genai.GenerativeModel(self.llm_model)            
+        return self._llm_client
+    
+    def generate_answer(
+        self,
+        question: str,
+        context: str,
+        system_prompt: Optional[str] = None,
+    ) -> str:
+        """
+        Generate answer using LLM with retrieved context.
+        """
+        if system_prompt is None:
+            system_prompt = """You are a knowledgeable assistant that answers questions based on the provided context.
+
+                Rules:
+                1. Only use information from the provided context to answer
+                2. If the context doesn't contain enough information, say so
+                3. Cite sources when possible using the URLs provided
+                4. Be concise but comprehensive
+                5. If entity relationships are provided, use them to give a more complete answer"""
+
+            prompt_template = """
+                Context:
+                {context}
+
+                Question: {question}
+
+                Answer:"""
+
+        formatted_prompt = prompt_template.format(context=context, question=question)
+        
+        client = self._get_llm_client()
+        
+        if self.llm_provider == "openai":
+            response = client.chat.completions.create(
+                model=self.llm_model,
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": formatted_prompt}
+                ],
+                temperature=0.7,
+                max_tokens=1024,
+            )
+            return response.choices[0].message.content
+        elif self.llm_provider == "gemini":
+            full_prompt = f"{system_prompt}\n\n{formatted_prompt}"
+            response = client.generate_content(
+                full_prompt,
+                generation_config={
+                    "temperature": 0.7,
+                    "max_output_tokens": 1024,
+                }
+            )
+            return response.text
+        raise ValueError(f"Unknown LLM provider: {self.llm_provider}")
     
     def embed_query(self, query: str) -> List[float]:
         """Generate embedding for query text"""
@@ -51,6 +126,7 @@ class RAGQueryEngine:
         query: str,
         top_k: int = 5,
         filters: Optional[Dict] = None,
+        generate_answer: bool = True, 
     ) -> RAGQueryResult:
         """
         Traditional RAG using MongoDB Atlas Vector Search.
@@ -64,6 +140,7 @@ class RAGQueryEngine:
             RAGQueryResult with relevant chunks
         """
         query_embedding = self.embed_query(query)
+        get_dagster_logger().debug(query_embedding)
         
         # Build vector search pipeline
         vector_search_stage = {
@@ -105,12 +182,17 @@ class RAGQueryEngine:
             for c in chunks
         ])
         
+        answer = None
+        if generate_answer and context_text:
+            answer = self.generate_answer(query, context_text)
+        
         return RAGQueryResult(
             chunks=chunks,
             entities=[],
             relations=[],
             context_text=context_text,
-            metadata={"method": "traditional_rag", "top_k": top_k}
+            metadata={"method": "traditional_rag", "top_k": top_k},
+            answer=answer,
         )
     
     # =========================================================================
@@ -121,6 +203,7 @@ class RAGQueryEngine:
         query: str,
         max_hops: int = 2,
         max_chunks: int = 10,
+        generate_answer: bool = True,
     ) -> RAGQueryResult:
         """
         Pure GraphRAG: No vector search. Entity extraction → Graph traversal.
@@ -216,18 +299,24 @@ class RAGQueryEngine:
             for c in chunks:
                 context_parts.append(f"[{c.get('uri', 'unknown')}]\n{c['chunk_text']}")
         
+        context_text = "\n\n".join(context_parts)
+        
+        answer = None
+        if generate_answer and chunks:
+            answer = self.generate_answer(query, context_text)
+        
         return RAGQueryResult(
             chunks=chunks,
             entities=matched_entities,
             relations=all_relations,
-            context_text="\n\n".join(context_parts),
+            context_text=context_text,
             metadata={
                 "method": "graph_rag",
                 "query_entities": query_entity_texts,
                 "matched_entities": len(matched_entities),
-                "graph_hops": max_hops,
                 "relations_traversed": len(all_relations),
-            }
+            },
+            answer=answer,
         )
 
 
@@ -262,6 +351,7 @@ class RAGQueryEngine:
         top_k_chunks: int = 3,
         max_hops: int = 2,
         max_related_chunks: int = 5,
+        generate_answer: bool = True,
     ) -> RAGQueryResult:
         """
         GraphRAG: Expand retrieval using entity relationships.
@@ -357,6 +447,10 @@ class RAGQueryEngine:
         
         context_text = "\n\n".join(context_parts)
         
+        answer = None
+        if generate_answer and all_chunks:
+            answer = self.generate_answer(query, context_text)
+        
         return RAGQueryResult(
             chunks=all_chunks,
             entities=entities,
@@ -368,7 +462,8 @@ class RAGQueryEngine:
                 "related_chunks": len(related_chunks),
                 "entities_found": len(entities),
                 "relations_found": len(relations),
-            }
+            },
+            answer=answer,
         )
     
     def close(self):
