@@ -14,7 +14,7 @@ from worker import gpu_worker
 
 INPUT_PATH = "gs://gen-ai-tu/news/chunks/"
 OUTPUT_PATH = "gs://gen-ai-tu/news/graph_rag/"
-LOCAL_CHECKPOINT = "/tmp/graph_rag_checkpoint.json"
+LOCAL_CHECKPOINT = "./graph_rag_checkpoint.json"
 
 NUM_GPUS = 2
 BATCH_SIZE = 256 
