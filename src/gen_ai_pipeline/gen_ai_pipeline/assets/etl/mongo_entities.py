@@ -1,7 +1,6 @@
 from dagster import asset, AssetExecutionContext, MaterializeResult, MetadataValue
 from dagster_pyspark import PySparkResource
 from pyspark.sql import functions as F
-from pyspark.sql.types import StructType, StructField, IntegerType
 from gen_ai_pipeline.resources.mongo import MongoDBUploadConfig, write_to_mongodb_spark_connector
 from dagster import MonthlyPartitionsDefinition
 from gen_ai_pipeline.assets.etl.ccnews_graph import graph_extraction

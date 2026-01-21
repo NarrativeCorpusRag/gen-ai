@@ -7,13 +7,22 @@ version = "0.1.0"
 
 [environments]
 encrypting = { features = ["base", "secrets-tools"] }
-docs = { features = ["base","docs"], solve-group = "default" }
-basic-research = { features = ["base","research-basics", "pipeline"], solve-group = "br" }
-pipeline = { features = ["base","pipeline", "etl", "graph"], solve-group = "pipeline" }
-etl = { features = ["base","pipeline", "etl"], solve-group = "etl" }
-graph = { features = ["base","pipeline", "graph"], solve-group = "graph" }
-lint = { features = ["base","lint"], solve-group = "default" }
-graph-bis = { features = ["base","graph_bis"], solve-group = "notgraph" }
+docs = { features = ["base", "docs"], solve-group = "default" }
+basic-research = { features = [
+  "base",
+  "research-basics",
+  "pipeline",
+], solve-group = "br" }
+pipeline = { features = [
+  "base",
+  "pipeline",
+  "etl",
+  "graph",
+], solve-group = "pipeline" }
+etl = { features = ["base", "pipeline", "etl"], solve-group = "etl" }
+graph = { features = ["base", "pipeline", "graph"], solve-group = "graph" }
+format = { features = ["base", "format"], solve-group = "default" }
+graph-bis = { features = ["base", "graph_bis"], solve-group = "notgraph" }
 
 [feature.base.dependencies]
 python = ">=3.11,<3.15"
@@ -23,7 +32,7 @@ openjdk = "~=17.0"
 [feature.pipeline.dependencies]
 pydantic = "~=2.12"
 dagster = "~=1.12"
-pyspark= "~=3.5"
+pyspark = "~=3.5"
 pylatexenc = "*"
 fsspec = "==2025.10.0"
 antlr-python-runtime = "4.9.*"
@@ -49,7 +58,7 @@ polars = "~=1.35"
 [feature.etl.dependencies]
 
 [feature.etl.pypi-dependencies]
-FastWARC="~=0.15"
+FastWARC = "~=0.15"
 Resiliparse = "~=0.15"
 tldextract = "~=5.3"
 idna = "~=3.11"
@@ -68,7 +77,9 @@ numpy = ">=1.15,<2.0a0"
 
 [feature.graph.pypi-dependencies]
 relik = { git = "https://github.com/HPicatto/relik.git", extras = ["cuda"] }
-maverick-coref = { git = "https://github.com/HPicatto/maverick-coref.git", extras = ["cuda"] }
+maverick-coref = { git = "https://github.com/HPicatto/maverick-coref.git", extras = [
+  "cuda",
+] }
 fastcoref = "~=2.1"
 
 [feature.graph_bis.dependencies]
@@ -78,8 +89,23 @@ fsspec = "==2025.10.0"
 
 [feature.graph_bis.pypi-dependencies]
 polars = "~=1.37"
-relik = {version="~=1.0", extras=["cuda"]}
+relik = { version = "~=1.0", extras = ["cuda"] }
 gcsfs = "==2025.10.0"
+
+[feature.format.dependencies]
+pytest = ">=8.4.2,<9"
+pytest-mock = ">=3.15.0,<4"
+pytest-cov = "~=7"
+ruff = ">=0.13.0,<1"
+yamllint = ">=1.37.1,<2"
+taplo = ">=0.10,<0.11"
+nodejs = ">=20.8.1,<25"
+
+[feature.format.pypi-dependencies]
+moto = "~=5.1.2"
+nbqa = "~=1.9.0"
+#pandas-stubs = "~=2.3.2.250827"
+#ty = ">=0.0.2,<1"
 
 [feature.docs.dependencies]
 nodejs = "~=24.4"
@@ -106,20 +132,18 @@ surt = "~=0.3"
 go-sops = "~=3.10"
 age = "~=1.2"
 
-[feature.lint.dependencies]
-[feature.lint.pypi-dependencies]
-[tasks] 
+[tasks]
 create_environment_encrypt = { cmd = "pixi install -e encrypting --locked" }
-create_environment_br  = { cmd = "pixi install -e basic-research --locked" }
-create_environment_pipeline     = { cmd = "pixi install -e pipeline --locked" }
+create_environment_br = { cmd = "pixi install -e basic-research --locked" }
+create_environment_pipeline = { cmd = "pixi install -e pipeline --locked" }
 
 [feature.secrets-tools.tasks.secrets-encrypt]
 cmd = """bash -c 'set -euo pipefail; PATH="$PWD/bin:$PATH"; for file in ${FILES_TO_ENCRYPT//,/ } ; do echo "Encrypting: $file"; sops --encrypt --age "$GEN_AI_AGE_PUBLIC_KEY" --input-type binary --output-type binary "$file" > "$file-dev.enc"; done'"""
-env = {GEN_AI_AGE_PUBLIC_KEY = "age19nj2kfsw8l56uyf2u8hacasy9yj3wyguk9r67jp846twyq3t5vvs3zzgh5", FILES_TO_ENCRYPT = ".env" }
+env = { GEN_AI_AGE_PUBLIC_KEY = "age19nj2kfsw8l56uyf2u8hacasy9yj3wyguk9r67jp846twyq3t5vvs3zzgh5", FILES_TO_ENCRYPT = ".env" }
 
 [feature.secrets-tools.tasks.secrets-decrypt]
 cmd = """bash -c 'set -euo pipefail; PATH="$PWD/bin:$PATH"; : "${SOPS_AGE_KEY_FILE:=key.txt}"; umask 077; for file in ${FILES_TO_ENCRYPT//,/ } ; do echo "Decrypting: $file"; sops --decrypt --input-type binary --output-type binary "$file-dev.enc" > "$file"; done'"""
-env = {SOPS_AGE_KEY_FILE = "key.txt", FILES_TO_ENCRYPT = ".env" }
+env = { SOPS_AGE_KEY_FILE = "key.txt", FILES_TO_ENCRYPT = ".env" }
 
 [feature.pipeline.tasks.pipeline-dev]
 description = "Start dagster UI for local pipelines project"
@@ -133,3 +157,11 @@ cwd = "src/gen_ai_pipeline/gen_ai_pipeline/resources/"
 cmd = """
 pixi-pack --create-executable --environment pipeline --platform linux-64 {{ pixi.manifest_path }} 
 """
+
+[feature.format.tasks.lint-basics]
+cmd = "ruff check ./src/gen_ai_pipeline && yamllint -c yamllintconfig.yaml . && taplo check"
+description = "Lint the basics"
+
+[feature.format.tasks.fmt-unsafe]
+cmd = "nbqa 'ruff format' ./src && ruff check --fix --unsafe-fixes ./src/gen_ai_pipeline && yamllint -c yamllintconfig.yaml . && taplo fmt"
+description = "Format python files - apply automatic ruff unsafe fixes"

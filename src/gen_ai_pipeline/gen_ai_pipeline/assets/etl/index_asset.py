@@ -8,16 +8,13 @@ from dagster import (
     asset, 
     AssetExecutionContext,
     DynamicPartitionsDefinition,
-    AssetExecutionContext,
     MaterializeResult,
     MetadataValue
 )
 from gen_ai_pipeline.helpers.gcloud_helpers import create_folder
+from google.cloud import storage
 
 warc_partitions_def = DynamicPartitionsDefinition(name="warc_files")
-
-import os
-from google.cloud import storage
 
 def upload_file_to_gcs(local_path: str, gcs_uri: str) -> None:
     assert gcs_uri.startswith("gs://")

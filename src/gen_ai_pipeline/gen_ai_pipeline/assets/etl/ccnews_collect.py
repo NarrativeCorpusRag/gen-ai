@@ -7,10 +7,7 @@ import re
 import os
 from dagster_gcp.pipes import (
     PipesDataprocJobClient,
-    PipesGCSContextInjector,
-    PipesGCSMessageReader,
 )
-from typing import Optional
 from gen_ai_pipeline.assets.etl.index_asset import cc_news_index
 
 monthly_partitions = MonthlyPartitionsDefinition(start_date="2025-01-01")
@@ -49,7 +46,7 @@ def ccnews_html_text_month(
     month = int(pk[5:7])
 
     main_py = "gs://gen-ai-tu/artifacts/ccnews_extract_job.py"
-    pyfiles: list[str] = []
+    #pyfiles: list[str] = []
     aws_key = os.getenv("ASCII_AWS_ACCESS_KEY_ID")
     aws_secret = os.getenv("ASCII_AWS_SECRET_ACCESS_KEY")
     project_id = os.getenv("GCP_PROJECT", "datascience-team-427407")    

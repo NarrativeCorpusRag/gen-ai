@@ -1,18 +1,17 @@
 from pyspark.sql import SparkSession
 from pyspark.sql.types import (
-    StructType, StructField, StringType, BooleanType, IntegerType
+    StructType, StructField, StringType, IntegerType
 )
-from dagster_pipes import open_dagster_pipes, PipesContext
 from pyspark.sql import functions as F
-
 from dagster_pipes import (
+    PipesContext,
     PipesCliArgsParamsLoader,
     PipesGCSContextLoader,
     PipesGCSMessageWriter,
     open_dagster_pipes,
 )
 from google.cloud.storage import Client as GCSClient
-from typing import Optional, List, Dict, Tuple, Any
+from typing import List, Dict, Any
 from dataclasses import dataclass, field
 import hashlib
 import re
@@ -211,7 +210,7 @@ def main():
         df = (
             spark.read
             .parquet(f"{docs_uri}year={year}/month={month}")
-            .filter(F.col("quality_passed") == True)
+            .filter(F.col("quality_passed"))
             .withColumn("year", F.lit(int(year)))
             .withColumn("month", F.lit(int(month)))
             .select("uri", "host", "html", "text", "year", "month", "day", "main_lang", "http_date")

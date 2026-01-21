@@ -2,10 +2,10 @@ from pyspark.sql import SparkSession
 from pyspark.sql.types import (
     StructType, StructField, StringType, BooleanType, IntegerType
 )
-from dagster_pipes import open_dagster_pipes, PipesContext
 from pyspark.sql import functions as F
 
 from dagster_pipes import (
+    PipesContext,
     PipesCliArgsParamsLoader,
     PipesGCSContextLoader,
     PipesGCSMessageWriter,
@@ -14,10 +14,10 @@ from dagster_pipes import (
 from google.cloud.storage import Client as GCSClient
 from typing import Optional, List, Dict, Tuple
 from dataclasses import dataclass, field
-import hashlib
 import re
 import nltk
 from nltk.corpus import stopwords
+import hashlib
 nltk.download('stopwords')
 
 @dataclass
@@ -410,7 +410,6 @@ def process_partition_docling(iterator, config: PreprocessingConfig):
     Process a partition of rows - runs on workers.
     MUST be at module level to be picklable.
     """
-    import hashlib
     
     # Initialize filters once per partition
     filters = QualityFilters(config)
@@ -517,13 +516,13 @@ def main():
         processed_df = processed_df.cache()
         
         total_processed = processed_df.count()
-        passed_count = processed_df.filter(F.col("quality_passed") == True).count()
+        passed_count = processed_df.filter(F.col("quality_passed")).count()
 
         pipes.log.info(f"Total processed: {total_processed}")
         pipes.log.info(f"Passed quality filters: {passed_count} ({passed_count/total_processed*100:.1f}%)")
         
         pipes.log.info("Filter rejection breakdown:")
-        processed_df.filter(F.col("quality_passed") == False) \
+        processed_df.filter(F.col("quality_passed")) \
             .groupBy("quality_reason") \
             .count() \
             .orderBy(F.desc("count")) \

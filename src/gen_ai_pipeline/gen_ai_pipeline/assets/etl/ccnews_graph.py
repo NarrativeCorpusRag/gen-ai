@@ -1,5 +1,4 @@
 # assets/graph_extraction.py
-import os
 import gc
 import hashlib
 import time
@@ -7,7 +6,7 @@ import torch
 import torch.multiprocessing as mp
 import polars as pl
 import fsspec
-from typing import List, Dict, Tuple, Optional
+from typing import List, Dict, Tuple
 from dagster import (
     asset,
     AssetExecutionContext,
@@ -218,7 +217,7 @@ def gpu_worker(
             gc.collect()
             torch.cuda.empty_cache()
 
-        except Exception as e:
+        except Exception:
             result_queue.put((file_idx, 0, 0, 0, False))
 
 

@@ -40,7 +40,7 @@ def mongodb_indexes(
     # Entities indexes
     context.log.info("Creating entities indexes...")
     entities = db["entities"]
-    entities.create_index("entity_id", unique=True)
+    entities.create_index("entity_id", unique=False)
     entities.create_index("chunk_id")
     entities.create_index("text")
     entities.create_index("wikipedia_id")
@@ -48,7 +48,7 @@ def mongodb_indexes(
     # Relations indexes
     context.log.info("Creating relations indexes...")
     relations = db["relations"]
-    relations.create_index("relation_id", unique=True)
+    relations.create_index("relation_id", unique=False)
     relations.create_index("chunk_id")
     relations.create_index("head_text")
     relations.create_index("tail_text")

@@ -3,7 +3,6 @@ from urllib.parse import urlparse
 import gzip
 import boto3
 import idna
-from pyspark.sql.functions import col
 import tldextract
 from fastwarc.warc import ArchiveIterator, WarcRecordType, is_http
 from fastwarc.stream_io import GZipStream
@@ -16,7 +15,14 @@ from pyspark.sql import SparkSession
 from pyspark.sql.types import (
     StructType, StructField, StringType, ArrayType, FloatType
 )
-from dagster_pipes import open_dagster_pipes, PipesContext
+from dagster_pipes import (
+    PipesContext,
+    PipesCliArgsParamsLoader,
+    PipesGCSContextLoader,
+    PipesGCSMessageWriter,
+    open_dagster_pipes,
+)
+from google.cloud.storage import Client as GCSClient
 
 
 ip_pattern = re.compile(r"^(?:www\.)?\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\Z")
@@ -139,20 +145,11 @@ def process_warc_partition(iterator, aws_access_key, aws_secret_key):
                         'month': month_str,
                         'day': day_str
                     }
-                except Exception as e:
+                except Exception:
                     continue
                     
         except Exception as e:
             print(f"Error processing WARC file {key}: {e}")
-
-
-from dagster_pipes import (
-    PipesCliArgsParamsLoader,
-    PipesGCSContextLoader,
-    PipesGCSMessageWriter,
-    open_dagster_pipes,
-)
-from google.cloud.storage import Client as GCSClient
 
 def main():
     gcs_client = GCSClient()
@@ -167,8 +164,6 @@ def main():
         context = PipesContext.get()
         year = context.get_extra("year")
         month = context.get_extra("month")
-        index_uri = context.get_extra("index_uri")
-        repartition = context.get_extra("repartition")
         out_root = context.get_extra("out_root")
         aws_access_key = context.get_extra("ASCII_AWS_ACCESS_KEY_ID")
         aws_secret_key = context.get_extra("ASCII_AWS_SECRET_ACCESS_KEY")

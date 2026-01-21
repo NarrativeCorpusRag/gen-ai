@@ -7,10 +7,7 @@ import re
 import os
 from dagster_gcp.pipes import (
     PipesDataprocJobClient,
-    PipesGCSContextInjector,
-    PipesGCSMessageReader,
 )
-from typing import Optional
 from gen_ai_pipeline.assets.etl.ccnews_collect import ccnews_html_text_month
 
 monthly_partitions = MonthlyPartitionsDefinition(start_date="2025-01-01")
@@ -49,7 +46,7 @@ def ccnews_preprocess(
     month = int(pk[5:7])
 
     main_py = "gs://gen-ai-tu/artifacts/ccnews_preprocess_job.py"
-    pyfiles: list[str] = []
+    #pyfiles: list[str] = []
     project_id = os.getenv("GCP_PROJECT", "datascience-team-427407")    
     region = os.getenv("GCP_CLUSTER_REGION", "us-central1")
     subnetwork_uri = os.getenv("DATAPROC_SUBNETWORK_URI")

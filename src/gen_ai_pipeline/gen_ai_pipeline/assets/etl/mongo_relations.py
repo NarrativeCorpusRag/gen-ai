@@ -4,10 +4,11 @@ from dagster import (
     MaterializeResult,
     MetadataValue,
 )
-from gen_ai_pipeline.resources.mongo import MongoDBUploadConfig 
+from gen_ai_pipeline.resources.mongo import MongoDBUploadConfig, write_to_mongodb_spark_connector
 from dagster import MonthlyPartitionsDefinition
 from dagster_pyspark import PySparkResource
 from gen_ai_pipeline.assets.etl.ccnews_graph import graph_extraction
+from pyspark.sql import functions as F
 
 
 monthly_partitions = MonthlyPartitionsDefinition(start_date="2025-01-01")
@@ -61,24 +62,13 @@ def mongodb_relations_spark(
     total_count = df_upload.count()
     context.log.info(f"Uploading {total_count} relations to MongoDB")
     
-    result_schema = StructType([
-        StructField("records_written", IntegerType(), True)
-    ])
-    
-    result_df = df_upload.mapInPandas(
-        lambda it: write_to_mongodb_partition(
-            it,
-            config.mongodb_uri,
-            config.database_name,
-            "relations",
-            "relation_id"
-        ),
-        schema=result_schema
+    write_to_mongodb_spark_connector(
+        df_upload,
+        config.mongodb_uri,
+        config.database_name,
+        "relations",
+        mode="append"  # Use append to avoid overwriting other partitions
     )
-    
-    total_written = result_df.agg(F.sum("records_written")).collect()[0][0]
-    
-    context.log.info(f"Successfully uploaded {total_written} relations")
     
     return MaterializeResult(
         metadata={

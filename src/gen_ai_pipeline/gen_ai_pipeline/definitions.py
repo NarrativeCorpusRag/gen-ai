@@ -1,7 +1,6 @@
 import os
 import dotenv
 from dagster import Definitions
-from dagster import Definitions
 from dagster_pyspark import PySparkResource
 
 from dagster_polars import PolarsParquetIOManager

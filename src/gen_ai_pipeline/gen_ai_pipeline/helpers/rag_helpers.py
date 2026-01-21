@@ -1,20 +1,9 @@
-import os
-from typing import Iterator, List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional
 from dataclasses import dataclass
-import pandas as pd
 from dagster import (
-    asset, 
-    AssetExecutionContext,
     MonthlyPartitionsDefinition, 
-    Config,
-    ConfigurableResource,
-    MaterializeResult,
-    MetadataValue,
 )
-from dagster_pyspark import PySparkResource
-from pyspark.sql import functions as F
-from pymongo import MongoClient, UpdateOne
-from pymongo.operations import SearchIndexModel
+from pymongo import MongoClient
 
 
 monthly_partitions = MonthlyPartitionsDefinition(start_date="2025-01-01")
@@ -333,7 +322,7 @@ class RAGQueryEngine:
                 if c["chunk_id"] not in all_chunk_ids:
                     all_chunks.append(c)
                     all_chunk_ids.add(c["chunk_id"])
-        except Exception as e:
+        except Exception:
             # Text index might not exist
             pass
         
