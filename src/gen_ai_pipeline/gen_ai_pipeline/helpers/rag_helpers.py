@@ -116,8 +116,147 @@ class RAGQueryEngine:
     # =========================================================================
     # GRAPH RAG: Entity and Relation-based Retrieval
     # =========================================================================
-    
     def graph_rag(
+        self,
+        query: str,
+        max_hops: int = 2,
+        max_chunks: int = 10,
+    ) -> RAGQueryResult:
+        """
+        Pure GraphRAG: No vector search. Entity extraction → Graph traversal.
+        
+        Process:
+        1. Extract entities from query using Relik (Sapienza model)
+        2. Find those entities in MongoDB
+        3. Use $graphLookup to traverse relationships
+        4. Retrieve chunks containing connected entities
+        """
+        
+        # Step 1: Extract entities from QUERY using Relik
+        query_entities = self._extract_entities_from_query(query)
+        query_entity_texts = [e["text"] for e in query_entities]
+        
+        if not query_entity_texts:
+            # Fallback: no entities found in query
+            return RAGQueryResult(
+                chunks=[], entities=[], relations=[],
+                context_text="No entities found in query.",
+                metadata={"method": "graph_rag", "error": "no_query_entities"}
+            )
+        
+        # Step 2: Find matching entities in our graph
+        matched_entities = list(self.entities_collection.find(
+            {"text": {"$in": query_entity_texts}}
+        ))
+        
+        # Step 3: Graph traversal using $graphLookup
+        pipeline = [
+            # Start from relations where our entities are the head
+            {"$match": {"head_text": {"$in": query_entity_texts}}},
+            
+            # Traverse the graph
+            {"$graphLookup": {
+                "from": "relations",
+                "startWith": "$tail_text",
+                "connectFromField": "tail_text",
+                "connectToField": "head_text",
+                "as": "connected_relations",
+                "maxDepth": max_hops,
+                "depthField": "hop_depth"
+            }},
+            
+            {"$limit": 100}
+        ]
+        
+        graph_results = list(self.relations_collection.aggregate(pipeline))
+        
+        # Step 4: Collect all connected entities and their chunk_ids
+        connected_chunk_ids = set()
+        all_relations = []
+        
+        for result in graph_results:
+            connected_chunk_ids.add(result.get("chunk_id"))
+            all_relations.append(result)
+            
+            for connected in result.get("connected_relations", []):
+                connected_chunk_ids.add(connected.get("chunk_id"))
+                all_relations.append(connected)
+        
+        # Also get chunks from directly matched entities
+        for ent in matched_entities:
+            connected_chunk_ids.add(ent["chunk_id"])
+        
+        connected_chunk_ids.discard(None)
+        
+        # Step 5: Retrieve the actual chunks
+        chunks = list(self.chunks_collection.find(
+            {"chunk_id": {"$in": list(connected_chunk_ids)[:max_chunks]}},
+            {"embedding": 0}
+        ))
+        
+        # Build context
+        context_parts = []
+        
+        context_parts.append(f"=== Query Entities: {', '.join(query_entity_texts)} ===")
+        
+        if all_relations:
+            context_parts.append("\n=== Graph Relationships ===")
+            seen = set()
+            for rel in all_relations[:15]:
+                key = (rel["head_text"], rel["relation"], rel["tail_text"])
+                if key not in seen:
+                    seen.add(key)
+                    hop = rel.get("hop_depth", 0)
+                    context_parts.append(
+                        f"[hop {hop}] {rel['head_text']} --[{rel['relation']}]--> {rel['tail_text']}"
+                    )
+        
+        if chunks:
+            context_parts.append("\n=== Connected Content ===")
+            for c in chunks:
+                context_parts.append(f"[{c.get('uri', 'unknown')}]\n{c['chunk_text']}")
+        
+        return RAGQueryResult(
+            chunks=chunks,
+            entities=matched_entities,
+            relations=all_relations,
+            context_text="\n\n".join(context_parts),
+            metadata={
+                "method": "graph_rag",
+                "query_entities": query_entity_texts,
+                "matched_entities": len(matched_entities),
+                "graph_hops": max_hops,
+                "relations_traversed": len(all_relations),
+            }
+        )
+
+
+    def _extract_entities_from_query(self, query: str) -> List[Dict]:
+        """
+        Extract entities from query using Relik (Sapienza model).
+        This is the key difference from hybrid - we use NER on the query itself.
+        """
+        if self.relik_entity_model is None:
+            # Lazy load
+            from relik import Relik
+            self.relik_entity_model = Relik.from_pretrained(
+                "sapienzanlp/relik-entity-linking-small"
+            )
+        
+        result = self.relik_entity_model(query)
+        
+        entities = []
+        if hasattr(result, 'spans') and result.spans:
+            for span in result.spans:
+                entities.append({
+                    "text": span.text,
+                    "label": getattr(span, 'label', 'ENTITY'),
+                    "wikipedia_id": getattr(span, 'id', None),
+                })
+        
+        return entities
+
+    def hybrid_rag(
         self,
         query: str,
         top_k_chunks: int = 3,
@@ -224,193 +363,9 @@ class RAGQueryEngine:
             relations=relations,
             context_text=context_text,
             metadata={
-                "method": "graph_rag",
+                "method": "hybrid_rag",
                 "initial_chunks": len(initial_result.chunks),
                 "related_chunks": len(related_chunks),
-                "entities_found": len(entities),
-                "relations_found": len(relations),
-            }
-        )
-    
-    # =========================================================================
-    # HYBRID RAG: Combine Vector Search + Graph + Keywords
-    # =========================================================================
-    
-    def hybrid_rag(
-        self,
-        query: str,
-        top_k_vector: int = 3,
-        top_k_keyword: int = 2,
-        use_graph: bool = True,
-        max_graph_chunks: int = 3,
-        filters: Optional[Dict] = None,
-    ) -> RAGQueryResult:
-        """
-        Hybrid RAG combining multiple retrieval strategies:
-        1. Vector similarity search
-        2. Keyword/text search
-        3. Graph-based expansion
-        
-        Args:
-            query: User's question
-            top_k_vector: Chunks from vector search
-            top_k_keyword: Chunks from keyword search
-            use_graph: Whether to include graph expansion
-            max_graph_chunks: Max chunks from graph traversal
-            filters: Optional filters
-        
-        Returns:
-            RAGQueryResult with combined results
-        """
-        all_chunks = []
-        all_chunk_ids = set()
-        entities = []
-        relations = []
-        
-        # Strategy 1: Vector Search
-        query_embedding = self.embed_query(query)
-        
-        vector_pipeline = [
-            {
-                "$vectorSearch": {
-                    "index": "vector_index",
-                    "path": "embedding",
-                    "queryVector": query_embedding,
-                    "numCandidates": top_k_vector * 10,
-                    "limit": top_k_vector,
-                }
-            },
-            {
-                "$addFields": {
-                    "retrieval_method": "vector",
-                    "score": {"$meta": "vectorSearchScore"}
-                }
-            },
-            {"$project": {"embedding": 0}}
-        ]
-        
-        vector_chunks = list(self.chunks_collection.aggregate(vector_pipeline))
-        for c in vector_chunks:
-            if c["chunk_id"] not in all_chunk_ids:
-                all_chunks.append(c)
-                all_chunk_ids.add(c["chunk_id"])
-        
-        # Strategy 2: Text/Keyword Search (using Atlas Search)
-        text_pipeline = [
-            {
-                "$search": {
-                    "index": "text_index",
-                    "text": {
-                        "query": query,
-                        "path": "chunk_text"
-                    }
-                }
-            },
-            {"$limit": top_k_keyword},
-            {
-                "$addFields": {
-                    "retrieval_method": "keyword",
-                    "score": {"$meta": "searchScore"}
-                }
-            },
-            {"$project": {"embedding": 0}}
-        ]
-        
-        try:
-            keyword_chunks = list(self.chunks_collection.aggregate(text_pipeline))
-            for c in keyword_chunks:
-                if c["chunk_id"] not in all_chunk_ids:
-                    all_chunks.append(c)
-                    all_chunk_ids.add(c["chunk_id"])
-        except Exception:
-            # Text index might not exist
-            pass
-        
-        # Strategy 3: Graph Expansion
-        if use_graph and all_chunk_ids:
-            # Get entities from retrieved chunks
-            entities = list(self.entities_collection.find(
-                {"chunk_id": {"$in": list(all_chunk_ids)}}
-            ))
-            entity_texts = list(set(e["text"] for e in entities))
-            
-            # Find relations
-            if entity_texts:
-                relations = list(self.relations_collection.find({
-                    "$or": [
-                        {"head_text": {"$in": entity_texts}},
-                        {"tail_text": {"$in": entity_texts}}
-                    ]
-                }).limit(30))
-                
-                # Get related chunk IDs
-                related_entity_texts = set()
-                for rel in relations:
-                    related_entity_texts.add(rel["head_text"])
-                    related_entity_texts.add(rel["tail_text"])
-                
-                if related_entity_texts:
-                    related_entities = self.entities_collection.find(
-                        {"text": {"$in": list(related_entity_texts)}}
-                    )
-                    related_chunk_ids = set()
-                    for ent in related_entities:
-                        if ent["chunk_id"] not in all_chunk_ids:
-                            related_chunk_ids.add(ent["chunk_id"])
-                    
-                    # Retrieve graph-related chunks
-                    if related_chunk_ids:
-                        graph_chunks = list(self.chunks_collection.find(
-                            {"chunk_id": {"$in": list(related_chunk_ids)[:max_graph_chunks]}},
-                            {"embedding": 0}
-                        ))
-                        for c in graph_chunks:
-                            c["retrieval_method"] = "graph"
-                            if c["chunk_id"] not in all_chunk_ids:
-                                all_chunks.append(c)
-                                all_chunk_ids.add(c["chunk_id"])
-        
-        context_parts = []
-        
-        vector_results = [c for c in all_chunks if c.get("retrieval_method") == "vector"]
-        keyword_results = [c for c in all_chunks if c.get("retrieval_method") == "keyword"]
-        graph_results = [c for c in all_chunks if c.get("retrieval_method") == "graph"]
-        
-        if vector_results:
-            context_parts.append("=== Semantically Similar Content ===")
-            for c in vector_results:
-                context_parts.append(f"[{c.get('uri', 'unknown')}]\n{c['chunk_text']}")
-        
-        if keyword_results:
-            context_parts.append("\n=== Keyword-Matched Content ===")
-            for c in keyword_results:
-                context_parts.append(f"[{c.get('uri', 'unknown')}]\n{c['chunk_text']}")
-        
-        if relations:
-            context_parts.append("\n=== Knowledge Graph Relationships ===")
-            for rel in relations[:10]:
-                context_parts.append(
-                    f"• {rel['head_text']} → {rel['relation']} → {rel['tail_text']}"
-                )
-        
-        if graph_results:
-            context_parts.append("\n=== Graph-Connected Content ===")
-            for c in graph_results:
-                context_parts.append(f"[{c.get('uri', 'unknown')}]\n{c['chunk_text']}")
-        
-        context_text = "\n\n".join(context_parts)
-        
-        return RAGQueryResult(
-            chunks=all_chunks,
-            entities=entities,
-            relations=relations,
-            context_text=context_text,
-            metadata={
-                "method": "hybrid_rag",
-                "vector_chunks": len(vector_results),
-                "keyword_chunks": len(keyword_results),
-                "graph_chunks": len(graph_results),
-                "total_chunks": len(all_chunks),
                 "entities_found": len(entities),
                 "relations_found": len(relations),
             }

@@ -72,7 +72,7 @@ def mongodb_indexes(
         {
           "type": "vector",
           "path": "embedding",
-          "numDimensions": 1024,
+          "numDimensions": 384, 
           "similarity": "cosine"
         },
         {"type": "filter", "path": "year"},
