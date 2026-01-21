@@ -143,6 +143,10 @@ venv/
 ENV/
 env.bak/
 venv.bak/
+kg-venv/
+
+#credentials
+gcp-creds.json
 
 # Spyder project settings
 .spyderproject
@@ -210,3 +214,7 @@ __marimo__/
 !.pixi/config.toml
 *.parquet
 *.tar
+*.json
+*.tsv
+
+*.txt
